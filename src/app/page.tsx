@@ -35,6 +35,7 @@ import { FinancialBay } from "@/components/dashboard/FinancialBay";
 import { SpendIncomeBay } from "@/components/dashboard/SpendIncomeBay";
 import { BiometricsBay } from "@/components/dashboard/BiometricsBay";
 import { GridFleetBay } from "@/components/dashboard/GridFleetBay";
+import { TradingBotBay } from "@/components/dashboard/TradingBotBay";
 import { OpsBar } from "@/components/dashboard/OpsBar";
 import { MaturityRadarPanel } from "@/components/dashboard/MaturityRadarPanel";
 
@@ -215,7 +216,7 @@ export default function OperationsDashboard() {
           </div>
         </div>
 
-        {/* ROW 2: BIOMETRICS, FLEET/GRID & MISSION CONTROL OPS (12 COLUMNS) */}
+        {/* ROW 2: BIOMETRICS, FLEET/GRID & ALGORITHMIC TRADING BOT (12 COLUMNS) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2.5">
           {/* ZONE 3: METABOLIC & BIOMETRIC BAY (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
@@ -227,20 +228,25 @@ export default function OperationsDashboard() {
             <GridFleetBay gridFleet={gridFleet} />
           </div>
 
-          {/* ZONE 5: MISSION CONTROL & OPS BAY (4 COLS) */}
+          {/* ZONE 5: ALGORITHMIC TRADING BOT (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
-            <OpsBar
-              bot={bot}
-              tasks={sprintTasks}
-              health={health}
-              gridFleet={gridFleet}
-              investments={investments}
-              spendIncome={spendIncome}
-              finance={finance}
-              onGlobalSync={fetchSyncData}
-              refreshing={refreshing}
-            />
+            <TradingBotBay bot={bot} />
           </div>
+        </div>
+
+        {/* ZONE 6: MISSION CONTROL & OPS BAY (12 COLUMNS FULL-WIDTH MATRIX) */}
+        <div>
+          <OpsBar
+            bot={bot}
+            tasks={sprintTasks}
+            health={health}
+            gridFleet={gridFleet}
+            investments={investments}
+            spendIncome={spendIncome}
+            finance={finance}
+            onGlobalSync={fetchSyncData}
+            refreshing={refreshing}
+          />
         </div>
 
         {/* ROW 3: FIXED INCOME & TREASURY MATURITY RADAR (12 COLUMNS FULL-WIDTH MATRIX) */}

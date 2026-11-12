@@ -284,6 +284,39 @@ export type InvestmentData = {
 };
 
 // ── Binance Trading Bot ───────────────────────────────────────────────────────
+export type BotTrade = {
+  id: number | string;
+  timestamp: string;
+  dateStr: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  price: number;
+  amount: number;
+  cost: number;
+  fee?: number;
+  pnl?: number;
+  pnlPct?: number;
+  strategy: string;
+  reason?: string;
+};
+
+export type BotPosition = {
+  id?: number | string;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  entryPrice: number;
+  currentPrice: number;
+  amount: number;
+  cost: number;
+  unrealizedPnl: number;
+  unrealizedPnlPct: number;
+  stopLoss: number;
+  takeProfit: number;
+  strategy: string;
+  openedAt?: string;
+  duration?: string;
+};
+
 export type BotSlot = {
   slotId: number;
   symbol: string;
@@ -311,7 +344,13 @@ export type BinanceBotData = {
   completedTradesCount: number;
   winRatePct: number;
   totalRealizedPnlUsdt: number;
+  monthRealizedPnlUsdt?: number;
+  monthTradesCount?: number;
+  monthWinningTrades?: number;
+  monthLosingTrades?: number;
   slots: BotSlot[];
+  openPositions?: BotPosition[];
+  monthTrades?: BotTrade[];
 };
 
 // ── Fleet & Renewable Grid ───────────────────────────────────────────────────
