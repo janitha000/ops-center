@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Percent,
+  Target,
 } from "lucide-react";
 import { SpendIncomeData } from "@/lib/types";
 import { formatLKR, formatUSD, formatPercent } from "@/lib/utils";
@@ -41,6 +42,11 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
   const { inflow, outflow } = spendIncome;
   const isPositiveSavings = spendIncome.netCashFlow >= 0;
   const isOverBudget = outflow.household.total > outflow.household.baselineBudget;
+
+  const normalSpend = outflow.household.normal || 0;
+  const baselineBudget = outflow.household.baselineBudget || 350000;
+  const normalBudgetPct = baselineBudget > 0 ? Number(((normalSpend / baselineBudget) * 100).toFixed(1)) : 0;
+  const normalBudgetRemaining = baselineBudget - normalSpend;
 
   const janithaPct = inflow.totalInflow > 0 ? (inflow.janithaSalary / inflow.totalInflow) * 100 : 0;
   const vindyaPct = inflow.totalInflow > 0 ? (inflow.vindyaSalary / inflow.totalInflow) * 100 : 0;
@@ -236,20 +242,53 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
 
               <div
                 onClick={() => setActiveTab("normal")}
-                className={`flex justify-between items-center cursor-pointer p-0.5 rounded-sm transition-colors ${
-                  activeTab === "normal" ? "bg-[#112417] text-emerald-300" : "text-slate-300 hover:bg-[#1a0e05]"
+                className={`cursor-pointer p-1 rounded-sm transition-colors ${
+                  activeTab === "normal" ? "bg-[#112417] text-emerald-300 ring-1 ring-emerald-500/30" : "text-slate-300 hover:bg-[#1a0e05]"
                 }`}
               >
-                <span className="flex items-center gap-1.5">
-                  <LivePulseDot />
-                  <span>House: Normal Expense</span>
-                  <span className="text-[7.5px] font-mono font-bold px-1 py-0.2 rounded-sm bg-amber-950/80 text-amber-300 border border-amber-800/50">
-                    +10% UNDOC
+                <div className="flex justify-between items-center mb-1">
+                  <span className="flex items-center gap-1.5">
+                    <LivePulseDot />
+                    <span className="font-semibold text-[11px]">House: Normal Expense</span>
+                    <span className="text-[7.5px] font-mono font-bold px-1 py-0.2 rounded-sm bg-amber-950/80 text-amber-300 border border-amber-800/50">
+                      +10% UNDOC
+                    </span>
                   </span>
-                </span>
-                <span className="font-bold text-emerald-400">
-                  {formatVal(outflow.household.normal)}
-                </span>
+                  <div className="text-right font-mono">
+                    <span className="font-bold text-emerald-400 text-xs">
+                      {formatVal(normalSpend)}
+                    </span>
+                    <span className="text-[8.5px] text-slate-500 ml-1">
+                      / {formatVal(baselineBudget)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Normal Expenses Monthly Budget Progress Meter */}
+                <div className="space-y-0.5">
+                  <div className="h-1.5 w-full bg-[#241006] rounded-none overflow-hidden relative">
+                    <div
+                      style={{ width: `${Math.min(100, normalBudgetPct)}%` }}
+                      className={`h-full transition-all duration-500 ${
+                        normalBudgetPct > 100
+                          ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
+                          : normalBudgetPct >= 85
+                          ? "bg-amber-400 shadow-[0_0_6px_#f59e0b]"
+                          : "bg-emerald-500"
+                      }`}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center text-[7.5px] font-mono">
+                    <span className={normalBudgetPct > 100 ? "text-rose-400 font-bold" : normalBudgetPct >= 85 ? "text-amber-400 font-bold" : "text-emerald-400 font-bold"}>
+                      {normalBudgetPct}% of budget
+                    </span>
+                    <span className="text-amber-300 font-semibold">
+                      {normalBudgetRemaining >= 0
+                        ? `${formatVal(normalBudgetRemaining)} runway left`
+                        : `+${formatVal(Math.abs(normalBudgetRemaining))} over budget`}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <div
@@ -357,6 +396,44 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
             {/* TAB 1: NORMAL HOUSEHOLD LIVING EXPENSES */}
             {activeTab === "normal" && (
               <>
+                {/* Monthly Baseline Budget Consumption Header */}
+                <div className="p-2 bg-[#140a03] border-b border-[#381a07] font-mono sticky top-0 z-10">
+                  <div className="flex justify-between items-center text-[9px] mb-1">
+                    <span className="text-amber-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Target className="h-3 w-3 text-amber-400" />
+                      <span>Monthly Baseline Budget Gauge</span>
+                    </span>
+                    <span className="text-slate-300 text-[10px]">
+                      <span className="font-bold text-emerald-400">{formatVal(normalSpend)}</span>
+                      <span className="text-slate-500"> / {formatVal(baselineBudget)}</span>
+                      <span className={`ml-1.5 font-bold ${normalBudgetPct > 100 ? "text-rose-400" : normalBudgetPct >= 85 ? "text-amber-400" : "text-emerald-400"}`}>
+                        ({normalBudgetPct}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-2 w-full bg-[#200e05] overflow-hidden relative mb-1">
+                    <div
+                      style={{ width: `${Math.min(100, normalBudgetPct)}%` }}
+                      className={`h-full transition-all duration-500 ${
+                        normalBudgetPct > 100
+                          ? "bg-rose-500 shadow-[0_0_8px_#f43f5e]"
+                          : normalBudgetPct >= 85
+                          ? "bg-amber-400"
+                          : "bg-emerald-500"
+                      }`}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[8px] text-slate-500">
+                    <span>0</span>
+                    <span className="text-amber-300 font-bold">
+                      {normalBudgetRemaining >= 0
+                        ? `${formatVal(normalBudgetRemaining)} RUNWAY REMAINING`
+                        : `+${formatVal(Math.abs(normalBudgetRemaining))} OVER BUDGET`}
+                    </span>
+                    <span className="text-slate-400">LIMIT: {formatVal(baselineBudget)}</span>
+                  </div>
+                </div>
+
                 {outflow.household.categories
                   .filter((c) => c.parentType !== "one_time")
                   .map((c) => {
