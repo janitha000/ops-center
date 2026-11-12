@@ -1,6 +1,6 @@
 import { createClient } from "@vercel/kv";
 import { neon } from "@neondatabase/serverless";
-import { FinancialData, NetWorthCategory, CseStockTicker } from "../types";
+import { FinancialData, NetWorthCategory, CseStockTicker, InvestorIncomeCategory } from "../types";
 import { getCurrentFinancialYear } from "../utils";
 import { getPalHoldings } from "./opsStore";
 
@@ -47,6 +47,75 @@ function enrichCategoriesWithIncome(categories: NetWorthCategory[], totalMonthly
     c.annualYieldPct = c.currentAmount > 0 ? Number((((c.monthlyIncome * 12) / c.currentAmount) * 100).toFixed(1)) : 0;
   });
 }
+
+export const INVESTOR_INCOME_CATEGORIES: InvestorIncomeCategory[] = [
+  {
+    id: "inv-fd",
+    name: "Fixed Deposits (FD)",
+    badge: "FD TOTAL",
+    badgeType: "fd",
+    investedAmount: 10000000,
+    grossMonthly: 83188,
+    netMonthly: 74869,
+    rateOrYieldPct: 9.98,
+    rateLabel: "9.98% p.a.",
+    sharePct: 20.0,
+    note: "WHT Deducted",
+  },
+  {
+    id: "inv-ut",
+    name: "Unit Trusts (UT)",
+    badge: "UT TOTAL",
+    badgeType: "ut",
+    investedAmount: 10072292,
+    grossMonthly: 89153,
+    netMonthly: 89153,
+    rateOrYieldPct: 10.62,
+    rateLabel: "10.62% p.a.",
+    sharePct: 23.9,
+    note: "Tax-Free",
+  },
+  {
+    id: "inv-treasury",
+    name: "Treasury Securities",
+    badge: "TREASURY TOTAL",
+    badgeType: "treasury",
+    investedAmount: 8599999,
+    grossMonthly: 77709,
+    netMonthly: 77709,
+    rateOrYieldPct: 10.84,
+    rateLabel: "10.84% p.a.",
+    sharePct: 20.8,
+    note: "No WHT",
+  },
+  {
+    id: "inv-dividends",
+    name: "Dividends (CSE)",
+    badge: "TAX-FREE",
+    badgeType: "cse",
+    investedAmount: 10859395,
+    grossMonthly: 56283,
+    netMonthly: 56283,
+    rateOrYieldPct: 6.22,
+    rateLabel: "6.22% p.a.",
+    sharePct: 15.1,
+    note: "Tax-Free",
+  },
+  {
+    id: "inv-pfca",
+    name: "PFCA Fixed Deposits",
+    badge: "TAX-FREE",
+    badgeType: "pfca",
+    investedAmount: 18805000,
+    grossMonthly: 154014,
+    netMonthly: 75660,
+    rateOrYieldPct: 4.83,
+    rateLabel: "4.83% p.a.",
+    sharePct: 20.2,
+    usdInvested: 58000,
+    note: "$58,000",
+  },
+];
 
 export async function fetchFinancialBayData(): Promise<FinancialData> {
   const currentFY = getCurrentFinancialYear();
@@ -176,6 +245,7 @@ export async function fetchFinancialBayData(): Promise<FinancialData> {
         netWorthDeltaLkr,
         netWorthDeltaPct,
         categories: categories.sort((a, b) => b.currentAmount - a.currentAmount),
+        incomeCategories: INVESTOR_INCOME_CATEGORIES,
         monthlyPassiveYield: {
           grossMonthly,
           netWhtMonthly,
@@ -286,6 +356,7 @@ function getFallbackFinancialBayData(
     netWorthDeltaLkr,
     netWorthDeltaPct,
     categories,
+    incomeCategories: INVESTOR_INCOME_CATEGORIES,
     monthlyPassiveYield: {
       grossMonthly,
       netWhtMonthly,

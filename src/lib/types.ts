@@ -28,6 +28,21 @@ export type CseStockTicker = {
   costBasis?: number;
 };
 
+export type InvestorIncomeCategory = {
+  id: string;
+  name: string;
+  badge: string;
+  badgeType: "fd" | "ut" | "treasury" | "cse" | "pfca";
+  investedAmount: number;
+  grossMonthly: number;
+  netMonthly: number;
+  rateOrYieldPct: number;
+  rateLabel: string;
+  sharePct: number;
+  usdInvested?: number;
+  note?: string;
+};
+
 export type FinancialData = {
   sourceStatus: "live" | "fallback" | "offline";
   lastUpdated: string;
@@ -37,6 +52,7 @@ export type FinancialData = {
   netWorthDeltaLkr: number;
   netWorthDeltaPct: number;
   categories: NetWorthCategory[];
+  incomeCategories?: InvestorIncomeCategory[];
   // Official LankaWealth Passive Cashflow Metrics
   monthlyPassiveYield: {
     netMonthlyAfterProgressiveIit: number; // Net Monthly (After Progressive IIT)

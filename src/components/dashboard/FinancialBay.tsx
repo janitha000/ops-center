@@ -227,7 +227,7 @@ export function FinancialBay({
             </div>
           </div>
 
-          {/* ── PART 2: MONTHLY INCOME PER CATEGORY ── */}
+          {/* ── PART 2: INVESTOR DASHBOARD PASSIVE INCOME CATEGORIES ── */}
           <div>
             <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5">
               <span className="flex items-center gap-1.5 text-amber-300">
@@ -240,37 +240,34 @@ export function FinancialBay({
             </div>
 
             <div className="border border-[#133323] rounded-sm bg-[#040c08] divide-y divide-[#133323]">
-              {finance.categories.map((c) => {
-                const incomeAmt = c.monthlyIncome || Math.round((c.allocationPct / 100) * monthlyPassiveYield.physicalCashAvailableMonthly);
-                const sharePct = c.incomeSharePct || (monthlyPassiveYield.physicalCashAvailableMonthly > 0 ? Number(((incomeAmt / monthlyPassiveYield.physicalCashAvailableMonthly) * 100).toFixed(1)) : 0);
-                const yieldPct = c.annualYieldPct || (c.currentAmount > 0 ? Number((((incomeAmt * 12) / c.currentAmount) * 100).toFixed(1)) : 0);
-                const isSelected = selectedCategory === c.id;
+              {(finance.incomeCategories || []).map((cat) => {
+                let badgeStyle = "bg-[#0b1f2e] text-cyan-300 border-cyan-800/60";
+                if (cat.badgeType === "ut") badgeStyle = "bg-[#0b291d] text-emerald-300 border-emerald-800/60";
+                else if (cat.badgeType === "treasury") badgeStyle = "bg-[#141738] text-indigo-300 border-indigo-800/60";
+                else if (cat.badgeType === "cse") badgeStyle = "bg-[#1f1638] text-purple-300 border-purple-800/60";
+                else if (cat.badgeType === "pfca") badgeStyle = "bg-[#2d1119] text-rose-300 border-rose-800/60";
 
                 return (
                   <div
-                    key={`income-${c.id}`}
-                    onClick={() => setSelectedCategory(isSelected ? null : c.id)}
-                    className={`px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
-                      isSelected ? "bg-[#0d2a1d]" : "hover:bg-[#071911]"
-                    }`}
+                    key={cat.id}
+                    className="px-2.5 py-1.5 text-xs font-mono hover:bg-[#071911] transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-amber-400" />
-                        <span className="font-semibold text-slate-200 truncate max-w-[110px] sm:max-w-[135px] text-[11px]">
-                          {c.name}
+                        <span className="font-semibold text-slate-200 truncate max-w-[125px] sm:max-w-[145px] text-[11px]">
+                          {cat.name}
                         </span>
-                        <span className="text-[8.5px] px-1 py-0.2 rounded-sm bg-[#1f1505] text-amber-300 border border-[#4d3707] font-semibold">
-                          {sharePct}%
+                        <span className={`text-[7.5px] px-1 py-0.2 rounded-sm border font-semibold ${badgeStyle}`}>
+                          {cat.badge}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <span className="text-amber-300 font-bold text-[11px]">
-                          {formatVal(incomeAmt)}<span className="text-[8.5px] text-slate-400 font-normal">/mo</span>
+                          {formatVal(cat.netMonthly)}<span className="text-[8.5px] text-slate-400 font-normal">/mo</span>
                         </span>
-                        <span className="text-[9.5px] font-semibold min-w-[38px] text-right text-emerald-400" title="Effective Annualized Yield">
-                          ~{yieldPct}%
+                        <span className="text-[9.5px] font-semibold min-w-[38px] text-right text-emerald-400" title={cat.rateLabel}>
+                          {cat.rateLabel}
                         </span>
                       </div>
                     </div>
@@ -279,7 +276,7 @@ export function FinancialBay({
                     <div className="h-1 w-full bg-[#181308] rounded-none mt-1 overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-amber-600 to-amber-400"
-                        style={{ width: `${sharePct}%` }}
+                        style={{ width: `${cat.sharePct}%` }}
                       />
                     </div>
                   </div>
