@@ -7,6 +7,58 @@ import { fetchBinanceBotData } from "@/lib/connectors/binanceBot";
 import { getSolarTelemetry, fetchFusionSolarKioskData } from "@/lib/connectors/opsStore";
 import { OpsDashboardPayload } from "@/lib/types";
 
+const PAST_SOLAR_WEIGHTS = [
+  { day: 1, kwh: 12.4, exp: 9.2 },
+  { day: 2, kwh: 14.2, exp: 10.5 },
+  { day: 3, kwh: 11.6, exp: 8.9 },
+  { day: 4, kwh: 13.8, exp: 10.8 },
+  { day: 5, kwh: 15.4, exp: 11.1 },
+  { day: 6, kwh: 10.1, exp: 7.4 },
+  { day: 7, kwh: 14.5, exp: 10.6 },
+  { day: 8, kwh: 12.8, exp: 9.4 },
+  { day: 9, kwh: 13.9, exp: 10.8 },
+  { day: 10, kwh: 12.4, exp: 9.1 },
+  { day: 11, kwh: 13.2, exp: 9.5 },
+];
+
+function buildSolarHistoryMonth(monthlyKwh: number, todayDailyKwh: number, targetKwh = 15.0) {
+  const now = new Date();
+  const currentDay = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  const targetPastSum = monthlyKwh > todayDailyKwh ? monthlyKwh - todayDailyKwh : 0;
+  const pastItems = PAST_SOLAR_WEIGHTS.slice(0, Math.max(0, currentDay - 1));
+  const baseSum = pastItems.reduce((s, p) => s + p.kwh, 0);
+  const scale = targetPastSum > 0 && baseSum > 0 ? targetPastSum / baseSum : 1;
+
+  const history = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isPast = d < currentDay;
+    const isToday = d === currentDay;
+    const pastItem = PAST_SOLAR_WEIGHTS[d - 1];
+
+    let gen = 0;
+    let exp = 0;
+    if (isToday) {
+      gen = Number(todayDailyKwh.toFixed(1));
+      exp = Number((todayDailyKwh * 0.76).toFixed(1));
+    } else if (isPast && pastItem) {
+      gen = Number((pastItem.kwh * scale).toFixed(1));
+      exp = Number((pastItem.exp * scale).toFixed(1));
+    }
+
+    history.push({
+      day: d,
+      date: `Nov ${d}`,
+      generationKwh: gen,
+      exportKwh: exp,
+      targetKwh,
+    });
+  }
+
+  return history;
+}
+
 export async function GET(req: NextRequest) {
   const zone = req.nextUrl.searchParams.get("zone")?.toLowerCase();
 
@@ -47,28 +99,18 @@ export async function GET(req: NextRequest) {
       lastSynced: new Date().toISOString(),
     };
 
-    const now = new Date();
-    const currentDay = now.getDate();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-
     let historyMonth = liveSolar?.historyMonth;
     if (!historyMonth || historyMonth.length === 0) {
-      historyMonth = [];
-      for (let d = 1; d <= daysInMonth; d++) {
-        historyMonth.push({
-          day: d,
-          date: `Nov ${d}`,
-          generationKwh: d <= currentDay ? Number((solarBase.dailyKwh * 0.9).toFixed(1)) : 0,
-          exportKwh: d <= currentDay ? Number((solarBase.dailyKwh * 0.76).toFixed(1)) : 0,
-          targetKwh: 15.0,
-        });
-      }
+      const monthYield = Number(liveSolar?.monthlyKwh || solarBase.monthlyKwh || 111.8);
+      const todayYield = Number(solarBase.dailyKwh || 1.98);
+      historyMonth = buildSolarHistoryMonth(monthYield, todayYield, 15.0);
     }
 
     const solar = {
       ...solarBase,
-      yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.84,
-      monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh,
+      dailyTargetKwh: 15.0,
+      yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.85,
+      monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh ?? 111.8,
       historyMonth,
     };
 
@@ -156,65 +198,19 @@ export async function GET(req: NextRequest) {
     stationCode: "NE=58772902",
   };
 
-  const pastSolarDays = [
-    { day: 1, kwh: 12.4, exp: 9.2 },
-    { day: 2, kwh: 14.2, exp: 10.5 },
-    { day: 3, kwh: 11.6, exp: 8.9 },
-    { day: 4, kwh: 13.8, exp: 10.8 },
-    { day: 5, kwh: 15.4, exp: 11.1 },
-    { day: 6, kwh: 10.1, exp: 7.4 },
-    { day: 7, kwh: 14.5, exp: 10.6 },
-    { day: 8, kwh: 12.8, exp: 9.4 },
-    { day: 9, kwh: 13.9, exp: 10.8 },
-    { day: 10, kwh: 12.4, exp: 9.1 },
-    { day: 11, kwh: 13.2, exp: 9.5 },
-  ];
-
-  const now = new Date();
-  const currentDay = now.getDate();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-
   let historyMonth = liveSolar?.historyMonth;
   if (!historyMonth || historyMonth.length === 0) {
-    // If monthlyKwh was synced, scale past days to exactly match the synced monthlyKwh
-    const targetPastSum = (liveSolar?.monthlyKwh && liveSolar.monthlyKwh > solarBase.dailyKwh)
-      ? liveSolar.monthlyKwh - solarBase.dailyKwh
-      : null;
-
-    const baseSum = pastSolarDays.slice(0, currentDay - 1).reduce((s, p) => s + p.kwh, 0);
-    const scale = targetPastSum && baseSum > 0 ? targetPastSum / baseSum : 1;
-
-    historyMonth = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      const isPast = d < currentDay;
-      const isToday = d === currentDay;
-      const pastItem = pastSolarDays[d - 1];
-
-      let gen = 0;
-      let exp = 0;
-      if (isToday) {
-        gen = Number(solarBase.dailyKwh.toFixed(1));
-        exp = Number((solarBase.dailyKwh * 0.76).toFixed(1));
-      } else if (isPast && pastItem) {
-        gen = Number((pastItem.kwh * scale).toFixed(1));
-        exp = Number((pastItem.exp * scale).toFixed(1));
-      }
-
-      historyMonth.push({
-        day: d,
-        date: `Nov ${d}`,
-        generationKwh: gen,
-        exportKwh: exp,
-        targetKwh: 15.0,
-      });
-    }
+    const monthYield = Number(liveSolar?.monthlyKwh || solarBase.monthlyKwh || 111.8);
+    const todayYield = Number(solarBase.dailyKwh || 1.98);
+    historyMonth = buildSolarHistoryMonth(monthYield, todayYield, 15.0);
   }
 
   const solar = {
     ...solarBase,
+    dailyTargetKwh: 15.0,
     lastSynced: liveSolar?.lastSynced || new Date().toISOString(),
     yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.85,
-    monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh,
+    monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh ?? 111.8,
     historyMonth,
   };
 

@@ -247,7 +247,7 @@ export async function fetchFusionSolarKioskData(token = DEFAULT_FUSIONSOLAR_KIOS
   try {
     const url = `https://intl.fusionsolar.huawei.com/rest/pvms/web/kiosk/v1/station-kiosk-file?kk=${token}`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     const res = await fetch(url, {
       headers: {
