@@ -53,8 +53,8 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
   const passivePct = inflow.totalInflow > 0 ? (inflow.lastMonthPassive / inflow.totalInflow) * 100 : 0;
 
   return (
-    <div className="bg-[#140b04]/90 border border-[#381a07] border-t border-t-white/10 rounded-md p-3.5 flex flex-col h-full font-sans">
-      <div className="flex-1 flex flex-col min-h-0">
+    <div className="bg-[#140b04]/90 border border-[#381a07] border-t border-t-white/10 rounded-md p-3.5 flex flex-col justify-between h-full font-sans">
+      <div>
         {/* ── BAY HEADER ── */}
         <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[#381a07]">
           <div className="flex items-center gap-2">
@@ -334,8 +334,8 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
         </div>
 
         {/* ── ROW 3: DETAILED DRILL-DOWN TABS (HOUSEHOLD vs LOANS vs OD vs VINDYA vs TAXES) ── */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5 overflow-x-auto shrink-0">
+        <div>
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5 overflow-x-auto">
             <div className="flex items-center gap-1 font-mono text-[9px] shrink-0">
               <button
                 onClick={() => setActiveTab("normal")}
@@ -392,7 +392,7 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
             </span>
           </div>
 
-          <div className="flex-1 min-h-[160px] border border-[#381a07] rounded-sm bg-[#0b0602] divide-y divide-[#381a07] overflow-y-auto">
+          <div className="h-[205px] border border-[#381a07] rounded-sm bg-[#0b0602] divide-y divide-[#381a07] overflow-y-auto">
             {/* TAB 1: NORMAL HOUSEHOLD LIVING EXPENSES */}
             {activeTab === "normal" && (
               <>
