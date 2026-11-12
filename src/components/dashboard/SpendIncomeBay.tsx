@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Percent,
   Target,
+  RefreshCw,
 } from "lucide-react";
 import { SpendIncomeData } from "@/lib/types";
 import { formatLKR, formatUSD, formatPercent } from "@/lib/utils";
@@ -18,6 +19,8 @@ import { formatLKR, formatUSD, formatPercent } from "@/lib/utils";
 interface SpendIncomeBayProps {
   spendIncome: SpendIncomeData;
   currency: "LKR" | "USD";
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 function LivePulseDot() {
@@ -29,7 +32,12 @@ function LivePulseDot() {
   );
 }
 
-export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
+export function SpendIncomeBay({
+  spendIncome,
+  currency,
+  onRefresh,
+  isRefreshing = false,
+}: SpendIncomeBayProps) {
   const [activeTab, setActiveTab] = useState<"normal" | "one_time" | "loans" | "od" | "taxes" | "vindya">("normal");
   const LKR_PER_USD = 310;
 
@@ -71,6 +79,14 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
             <span className="px-1.5 py-0.5 rounded-sm bg-[#221004] text-slate-400 border border-[#381a07]">
               {spendIncome.currentMonth}
             </span>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 rounded bg-[#221004] hover:bg-[#341805] border border-[#381a07] text-amber-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Zone 2 spendings and income data"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-amber-300" : ""}`} />
+            </button>
           </div>
         </div>
 

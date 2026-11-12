@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sun, Zap, BatteryCharging, Power, BarChart2 } from "lucide-react";
+import { Sun, Zap, BatteryCharging, Power, BarChart2, RefreshCw } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -18,6 +18,8 @@ import { SolarSyncModal } from "./SolarSyncModal";
 
 interface GridFleetBayProps {
   gridFleet: GridFleetData;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 function formatRelativeTime(dateString?: string): string {
@@ -56,7 +58,7 @@ function CustomSolarTooltip({ active, payload }: any) {
   return null;
 }
 
-export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
+export function GridFleetBay({ gridFleet, onRefresh, isRefreshing = false }: GridFleetBayProps) {
   const { solar, fleet } = gridFleet;
   const [chargingOverride, setChargingOverride] = useState(fleet.isCharging);
   const [isSolarSyncOpen, setIsSolarSyncOpen] = useState(false);
@@ -93,7 +95,10 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
         {/* ── BAY HEADER ── */}
         <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#3a2408]">
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b] animate-pulse" />
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600" />
+            </span>
             <h2 className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
               Zone 4: Fleet &amp; Renewable Grid
             </h2>
@@ -115,6 +120,14 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40">
               NET-METER
             </span>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 rounded bg-[#180f04] hover:bg-[#251705] border border-[#3a2408] text-amber-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Zone 4 solar & fleet data"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-amber-300" : ""}`} />
+            </button>
           </div>
         </div>
 

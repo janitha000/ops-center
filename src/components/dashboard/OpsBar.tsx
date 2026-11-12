@@ -37,6 +37,8 @@ interface OpsBarProps {
   finance?: FinancialData;
   onGlobalSync?: () => void;
   refreshing?: boolean;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 interface TacticalAlert {
@@ -57,6 +59,8 @@ export function OpsBar({
   finance,
   onGlobalSync,
   refreshing = false,
+  onRefresh,
+  isRefreshing = false,
 }: OpsBarProps) {
   const [tasks, setTasks] = useState<SprintTask[]>(initialTasks);
   const [taskFilter, setTaskFilter] = useState<"all" | "active" | "done">("all");
@@ -234,6 +238,14 @@ export function OpsBar({
           <span className="text-[8px] font-mono font-bold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 uppercase">
             MASTER CONTROLLER
           </span>
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="p-1 rounded bg-[#090f2b] hover:bg-[#131a3d] border border-[#1a2550] text-indigo-400 hover:text-white transition-colors disabled:opacity-50"
+            title="Refresh Zone 6 mission control data"
+          >
+            <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-indigo-300" : ""}`} />
+          </button>
         </div>
 
         {/* ── CROSS-BAY TACTICAL ALERTS TICKER ── */}

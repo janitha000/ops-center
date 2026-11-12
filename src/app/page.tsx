@@ -46,6 +46,7 @@ export default function OperationsDashboard() {
   const [currency, setCurrency] = useState<"LKR" | "USD">("LKR");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [zoneRefreshing, setZoneRefreshing] = useState<Record<string, boolean>>({});
   const [currentTime, setCurrentTime] = useState<string>("");
 
   // Live SL UTC+05:30 Clock
@@ -95,6 +96,22 @@ export default function OperationsDashboard() {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  }, []);
+
+  // Per-zone selective refresh callback
+  const handleRefreshZone = useCallback(async (zoneKey: "zone1" | "zone2" | "zone3" | "zone4" | "zone5" | "zone6") => {
+    setZoneRefreshing((prev) => ({ ...prev, [zoneKey]: true }));
+    try {
+      const res = await fetch(`/api/ops/sync?zone=${zoneKey}`);
+      if (res.ok) {
+        const partial = await res.json();
+        setData((prev) => (prev ? { ...prev, ...partial } : prev));
+      }
+    } catch (err) {
+      console.error(`Error refreshing ${zoneKey}:`, err);
+    } finally {
+      setZoneRefreshing((prev) => ({ ...prev, [zoneKey]: false }));
     }
   }, []);
 
@@ -204,6 +221,8 @@ export default function OperationsDashboard() {
               finance={finance}
               currency={currency}
               onToggleCurrency={() => setCurrency((c) => (c === "LKR" ? "USD" : "LKR"))}
+              onRefresh={() => handleRefreshZone("zone1")}
+              isRefreshing={!!zoneRefreshing.zone1}
             />
           </div>
 
@@ -212,6 +231,8 @@ export default function OperationsDashboard() {
             <SpendIncomeBay
               spendIncome={spendIncome}
               currency={currency}
+              onRefresh={() => handleRefreshZone("zone2")}
+              isRefreshing={!!zoneRefreshing.zone2}
             />
           </div>
         </div>
@@ -220,17 +241,29 @@ export default function OperationsDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-2.5">
           {/* ZONE 3: METABOLIC & BIOMETRIC BAY (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
-            <BiometricsBay health={health} />
+            <BiometricsBay
+              health={health}
+              onRefresh={() => handleRefreshZone("zone3")}
+              isRefreshing={!!zoneRefreshing.zone3}
+            />
           </div>
 
           {/* ZONE 4: FLEET & RENEWABLE GRID (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
-            <GridFleetBay gridFleet={gridFleet} />
+            <GridFleetBay
+              gridFleet={gridFleet}
+              onRefresh={() => handleRefreshZone("zone4")}
+              isRefreshing={!!zoneRefreshing.zone4}
+            />
           </div>
 
           {/* ZONE 5: ALGORITHMIC TRADING BOT (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
-            <TradingBotBay bot={bot} />
+            <TradingBotBay
+              bot={bot}
+              onRefresh={() => handleRefreshZone("zone5")}
+              isRefreshing={!!zoneRefreshing.zone5}
+            />
           </div>
         </div>
 
@@ -246,6 +279,8 @@ export default function OperationsDashboard() {
             finance={finance}
             onGlobalSync={fetchSyncData}
             refreshing={refreshing}
+            onRefresh={() => handleRefreshZone("zone6")}
+            isRefreshing={!!zoneRefreshing.zone6}
           />
         </div>
 

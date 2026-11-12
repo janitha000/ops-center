@@ -14,16 +14,19 @@ import {
   XCircle,
   ExternalLink,
   Sliders,
-  DollarSign
+  DollarSign,
+  RefreshCw
 } from "lucide-react";
 import { BinanceBotData, BotPosition, BotTrade } from "@/lib/types";
 import { formatUSD } from "@/lib/utils";
 
 interface TradingBotBayProps {
   bot: BinanceBotData;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export function TradingBotBay({ bot }: TradingBotBayProps) {
+export function TradingBotBay({ bot, onRefresh, isRefreshing = false }: TradingBotBayProps) {
   const [tab, setTab] = useState<"open" | "month" | "strategies">("open");
 
   const openPositions: BotPosition[] = bot.openPositions || [];
@@ -46,8 +49,8 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
         <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[#17234d]">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600" />
             </span>
             <h2 className="text-[10px] font-mono font-bold tracking-wider uppercase text-cyan-400">
               ZONE 5: ALGORITHMIC TRADING BOT
@@ -57,7 +60,7 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
             </span>
           </div>
 
-          {/* Tab Switcher */}
+          {/* Tab Switcher & Zone Refresh */}
           <div className="flex items-center gap-1 font-mono text-[9px]">
             <button
               onClick={() => setTab("open")}
@@ -88,6 +91,14 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
               }`}
             >
               SLOTS
+            </button>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 rounded bg-[#0f1738] hover:bg-[#19275a] border border-[#17234d] text-cyan-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Zone 5 trading bot telemetry"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-cyan-300" : ""}`} />
             </button>
           </div>
         </div>

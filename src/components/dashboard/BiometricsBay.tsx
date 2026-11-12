@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Clock, Activity, Flame, Droplets, Sparkles, Calendar } from "lucide-react";
+import { Clock, Activity, Flame, Droplets, Sparkles, Calendar, RefreshCw } from "lucide-react";
 import { HealthData } from "@/lib/types";
 
 interface BiometricsBayProps {
   health: HealthData;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
-export function BiometricsBay({ health }: BiometricsBayProps) {
+export function BiometricsBay({ health, onRefresh, isRefreshing = false }: BiometricsBayProps) {
   const [viewMode, setViewMode] = useState<"day" | "month">("day");
   const { today, hba1c, history7d = [] } = health;
 
@@ -79,8 +81,8 @@ export function BiometricsBay({ health }: BiometricsBayProps) {
         <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[#0d3b38]">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600" />
             </span>
             <h2 className="text-[10px] font-mono font-bold tracking-wider uppercase text-teal-400">
               ZONE 3: METABOLIC &amp; BIOMETRIC BAY
@@ -92,7 +94,7 @@ export function BiometricsBay({ health }: BiometricsBayProps) {
             )}
           </div>
 
-          {/* Interactive Day View vs Month View Switcher */}
+          {/* Interactive Day View vs Month View Switcher & Zone Refresh */}
           <div className="flex items-center gap-1 font-mono text-[9px]">
             <button
               onClick={() => setViewMode("day")}
@@ -113,6 +115,14 @@ export function BiometricsBay({ health }: BiometricsBayProps) {
               }`}
             >
               MONTH VIEW
+            </button>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 rounded bg-[#062422] hover:bg-[#0c3c39] border border-[#0d3b38] text-teal-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Zone 3 biometrics data"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-teal-300" : ""}`} />
             </button>
           </div>
         </div>

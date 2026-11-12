@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { TrendingUp, ArrowUpRight, DollarSign, Wallet, ShieldCheck, ChevronRight, Banknote } from "lucide-react";
+import { TrendingUp, ArrowUpRight, DollarSign, Wallet, ShieldCheck, ChevronRight, Banknote, RefreshCw } from "lucide-react";
 import { FinancialData, NetWorthCategory } from "@/lib/types";
 import { formatLKR, formatUSD, formatPercent } from "@/lib/utils";
 import { PalSyncModal } from "./PalSyncModal";
@@ -10,6 +10,8 @@ interface FinancialBayProps {
   finance: FinancialData;
   currency: "LKR" | "USD";
   onToggleCurrency: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 function formatRelativeTime(dateString?: string): string {
@@ -40,6 +42,8 @@ export function FinancialBay({
   finance,
   currency,
   onToggleCurrency,
+  onRefresh,
+  isRefreshing = false,
 }: FinancialBayProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isPalSyncOpen, setIsPalSyncOpen] = useState(false);
@@ -86,6 +90,14 @@ export function FinancialBay({
             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-emerald-950/70 text-emerald-300 border border-emerald-800/40">
               AUDITED FY{finance.currentFY.slice(2)}
             </span>
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-1 rounded bg-[#0b2419] hover:bg-[#133323] border border-[#164e35] text-emerald-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Refresh Zone 1 financial data"
+            >
+              <RefreshCw className={`h-2.5 w-2.5 ${isRefreshing ? "animate-spin text-emerald-300" : ""}`} />
+            </button>
           </div>
         </div>
 
