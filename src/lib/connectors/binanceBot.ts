@@ -36,8 +36,18 @@ export async function fetchBinanceBotData(): Promise<BinanceBotData> {
 
       // Prices from slots
       const engineSlots = status.slots || {};
-      const bnbPrice = Number(engineSlots["1"]?.last_price || 674.65);
-      const ethPrice = Number(engineSlots["2"]?.last_price || 2073.99);
+
+      // Helper to find price for a symbol from slots
+      const getSymbolPrice = (symbol: string): number => {
+        if (!symbol) return 0;
+        const matchingSlot = Object.values(engineSlots).find(
+          (s: any) => s.symbol === symbol || s.symbol?.replace("/", "") === symbol.replace("/", "")
+        ) as any;
+        if (matchingSlot && Number(matchingSlot.last_price)) {
+          return Number(matchingSlot.last_price);
+        }
+        return 0;
+      };
 
       // Extract slot info
       const slots: BotSlot[] = [];
@@ -45,7 +55,7 @@ export async function fetchBinanceBotData(): Promise<BinanceBotData> {
         const slotId = parseInt(slotIdStr, 10);
         const s = engineSlots[slotIdStr];
         const pos = positions.find((p: any) => p.symbol === s.symbol);
-        const currentPrice = Number(s.last_price || s.current_price || (s.symbol?.includes("ETH") ? ethPrice : bnbPrice));
+        const currentPrice = Number(s.last_price || s.current_price || getSymbolPrice(s.symbol) || 0);
 
         slots.push({
           slotId,
@@ -101,17 +111,33 @@ export async function fetchBinanceBotData(): Promise<BinanceBotData> {
         ? Number(((winningTrades.length / closedTrades.length) * 100).toFixed(1))
         : 0;
 
-      // Extract Balances
+      // Extract Balances & Dynamic Total Wallet Value
       const freeUsdt = Number(
-        balances["USDT (Free)"] ?? balances["USDT"] ?? balances["free_usdt"] ?? 323.76
+        balances["USDT (Free)"] ?? balances["USDT"] ?? balances["free_usdt"] ?? 0
       );
-      const ethFree = Number(balances["ETH (Free)"] ?? balances["ETH"] ?? 0.142805);
-      const bnbFree = Number(balances["BNB (Free)"] ?? balances["BNB"] ?? 0.000112);
-      const totalWalletUsdt = Number((freeUsdt + ethFree * ethPrice + bnbFree * bnbPrice).toFixed(2));
+
+      let cryptoValueUsdt = 0;
+      for (const [key, val] of Object.entries(balances)) {
+        const numVal = Number(val);
+        if (!numVal || isNaN(numVal) || numVal <= 0) continue;
+        if (key.includes("USDT")) continue;
+        const asset = key.replace(" (Free)", "").trim();
+        const price = getSymbolPrice(`${asset}/USDT`) || getSymbolPrice(asset);
+        if (price > 0) {
+          cryptoValueUsdt += numVal * price;
+        }
+      }
+      const totalWalletUsdt = Number((freeUsdt + cryptoValueUsdt).toFixed(2));
 
       // Extract Open Positions
       const openPositions: BotPosition[] = positions.map((p: any, idx: number) => {
-        const curPrice = p.symbol?.includes("ETH") ? ethPrice : bnbPrice;
+        const curPrice = Number(
+          getSymbolPrice(p.symbol) ||
+          p.current_price ||
+          p.last_price ||
+          p.entry_price ||
+          0
+        );
         const entryPrice = Number(p.entry_price || 0);
         const amount = Number(p.amount || 0);
         const cost = Number(p.cost || (entryPrice * amount));
@@ -124,7 +150,7 @@ export async function fetchBinanceBotData(): Promise<BinanceBotData> {
           entryPrice,
           currentPrice: curPrice,
           amount,
-          cost,
+          cost: Number(cost.toFixed(2)),
           unrealizedPnl: Number(unPnl.toFixed(2)),
           unrealizedPnlPct: Number(unPnlPct.toFixed(2)),
           stopLoss: Number(p.stop_loss || 0),

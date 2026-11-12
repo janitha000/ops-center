@@ -39,9 +39,6 @@ export function TradingBotBay({ bot, onRefresh, isRefreshing = false }: TradingB
   const lossCount = bot.monthLosingTrades ?? 1;
   const winRate = bot.winRatePct ?? 66.7;
 
-  // Primary active open trade
-  const activePosition = openPositions.length > 0 ? openPositions[0] : null;
-
   return (
     <div className="bg-[#070b1c]/90 border border-[#17234d] border-t border-t-white/10 rounded-md p-3.5 flex flex-col justify-between h-full font-sans">
       <div>
@@ -141,69 +138,112 @@ export function TradingBotBay({ bot, onRefresh, isRefreshing = false }: TradingB
         ══════════════════════════════════════════════════════════════════════ */}
         {tab === "open" && (
           <div className="space-y-2 font-mono">
-            {activePosition ? (
-              <div className="bg-[#040714] border border-[#17234d] p-2.5 rounded-sm">
-                <div className="flex items-center justify-between text-[9px] uppercase tracking-wider mb-1.5">
-                  <span className="flex items-center gap-1.5 text-cyan-300 font-bold">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>{activePosition.symbol} ({activePosition.side})</span>
-                    <span className="text-[7.5px] px-1 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                      {activePosition.strategy}
-                    </span>
-                  </span>
-                  <span className={`font-bold text-xs ${activePosition.unrealizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                    {activePosition.unrealizedPnl >= 0 ? `+${formatUSD(activePosition.unrealizedPnl)}` : `-${formatUSD(Math.abs(activePosition.unrealizedPnl))}`} ({activePosition.unrealizedPnlPct.toFixed(2)}%)
-                  </span>
-                </div>
+            {openPositions.length > 0 ? (
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-0.5">
+                {openPositions.map((pos) => {
+                  const sl = pos.stopLoss || (pos.entryPrice * 0.9);
+                  const tp = pos.takeProfit || (pos.entryPrice * 1.1);
+                  const totalRange = Math.max(tp - sl, 0.0001);
 
-                {/* Entry & Current Mark Readout */}
-                <div className="grid grid-cols-4 gap-1.5 bg-[#091030] p-1.5 rounded-sm border border-[#17234d]/60 text-center mb-2">
-                  <div>
-                    <span className="block text-[7.5px] text-slate-500 uppercase">Entry Price</span>
-                    <span className="text-[10px] font-bold text-slate-200">{formatUSD(activePosition.entryPrice)}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[7.5px] text-slate-500 uppercase">Current Mark</span>
-                    <span className="text-[10px] font-bold text-cyan-300">{formatUSD(activePosition.currentPrice)}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[7.5px] text-slate-500 uppercase">Position Size</span>
-                    <span className="text-[10px] font-bold text-slate-200">{activePosition.amount}</span>
-                  </div>
-                  <div>
-                    <span className="block text-[7.5px] text-slate-500 uppercase">Open Duration</span>
-                    <span className="text-[10px] font-bold text-indigo-300">{activePosition.duration || "Active"}</span>
-                  </div>
-                </div>
+                  // Percentage of buy (entry) price within range
+                  const buyPct = Math.min(Math.max(((pos.entryPrice - sl) / totalRange) * 100, 4), 96);
 
-                {/* Risk Proximity & Safety Bracket (Stop Loss vs Take Profit) */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[8px] text-slate-400">
-                    <span className="text-rose-400 font-semibold flex items-center gap-0.5">
-                      <ArrowDownRight className="h-2.5 w-2.5" /> Stop Loss: {formatUSD(activePosition.stopLoss)}
-                    </span>
-                    <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
-                      Take Profit: {formatUSD(activePosition.takeProfit)} <ArrowUpRight className="h-2.5 w-2.5" />
-                    </span>
-                  </div>
+                  // Percentage of current mark price within range
+                  const currentPct = Math.min(Math.max(((pos.currentPrice - sl) / totalRange) * 100, 2), 98);
 
-                  {/* Visual Range Bracket Meter */}
-                  <div className="h-2 w-full bg-[#0c143d] rounded-none overflow-hidden relative border border-[#17234d]">
-                    <div className="absolute left-0 w-[20%] h-full bg-rose-500/30" />
-                    <div className="absolute right-0 w-[20%] h-full bg-emerald-500/30" />
-                    <div
-                      style={{ left: "55%" }}
-                      className="absolute top-0 bottom-0 w-1.5 bg-cyan-400 shadow-[0_0_6px_#22d3ee]"
-                      title={`Current Mark Price: ${formatUSD(activePosition.currentPrice)}`}
-                    />
-                  </div>
+                  const boughtCostUsdt = pos.cost || (pos.entryPrice * pos.amount);
 
-                  <div className="flex justify-between text-[7.5px] text-slate-500 px-0.5">
-                    <span>Trailing SL Active</span>
-                    <span className="text-cyan-400 font-semibold">Active Position</span>
-                    <span>Limit TP Active</span>
-                  </div>
-                </div>
+                  return (
+                    <div key={pos.id || pos.symbol} className="bg-[#040714] border border-[#17234d] p-2.5 rounded-sm">
+                      <div className="flex items-center justify-between text-[9px] uppercase tracking-wider mb-1.5">
+                        <span className="flex items-center gap-1.5 text-cyan-300 font-bold">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>{pos.symbol} ({pos.side})</span>
+                          <span className="text-[7.5px] px-1 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                            {pos.strategy}
+                          </span>
+                        </span>
+                        <span className={`font-bold text-xs ${pos.unrealizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {pos.unrealizedPnl >= 0 ? `+${formatUSD(pos.unrealizedPnl)}` : `-${formatUSD(Math.abs(pos.unrealizedPnl))}`} ({pos.unrealizedPnlPct.toFixed(2)}%)
+                        </span>
+                      </div>
+
+                      {/* Entry & Current Mark Readout */}
+                      <div className="grid grid-cols-4 gap-1.5 bg-[#091030] p-1.5 rounded-sm border border-[#17234d]/60 text-center mb-2">
+                        <div>
+                          <span className="block text-[7.5px] text-slate-500 uppercase">Entry Price</span>
+                          <span className="text-[10px] font-bold text-slate-200">{formatUSD(pos.entryPrice)}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[7.5px] text-slate-500 uppercase">Current Mark</span>
+                          <span className="text-[10px] font-bold text-cyan-300">{formatUSD(pos.currentPrice)}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[7.5px] text-slate-500 uppercase">Position Size</span>
+                          <span className="text-[10px] font-bold text-slate-200">{pos.amount}</span>
+                          <span className="block text-[7.5px] text-amber-300/90 font-semibold">{formatUSD(boughtCostUsdt)} USDT</span>
+                        </div>
+                        <div>
+                          <span className="block text-[7.5px] text-slate-500 uppercase">Open Duration</span>
+                          <span className="text-[10px] font-bold text-indigo-300">{pos.duration || "Active"}</span>
+                        </div>
+                      </div>
+
+                      {/* Risk Proximity & Safety Bracket (Stop Loss vs Take Profit vs Buying Price) */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center text-[8px] text-slate-400">
+                          <span className="text-rose-400 font-semibold flex items-center gap-0.5">
+                            <ArrowDownRight className="h-2.5 w-2.5" /> Stop Loss: {formatUSD(pos.stopLoss)}
+                          </span>
+                          <span className="text-amber-300 font-semibold flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 inline-block shadow-[0_0_4px_#fbbf24]" />
+                            Buy: {formatUSD(pos.entryPrice)}
+                          </span>
+                          <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
+                            Take Profit: {formatUSD(pos.takeProfit)} <ArrowUpRight className="h-2.5 w-2.5" />
+                          </span>
+                        </div>
+
+                        {/* Visual Range Bracket Meter with Marked Buying Price */}
+                        <div className="h-2.5 w-full bg-[#0c143d] rounded-none overflow-hidden relative border border-[#17234d]">
+                          {/* Trailing SL Risk Zone (Left 20%) */}
+                          <div className="absolute left-0 w-[20%] h-full bg-rose-500/25" />
+                          {/* Limit TP Target Zone (Right 20%) */}
+                          <div className="absolute right-0 w-[20%] h-full bg-emerald-500/25" />
+
+                          {/* Marked Buying Price Position */}
+                          <div
+                            style={{ left: `${buyPct}%` }}
+                            className="absolute top-0 bottom-0 w-1 bg-amber-400 z-10 shadow-[0_0_6px_#fbbf24]"
+                            title={`Buying Price: ${formatUSD(pos.entryPrice)}`}
+                          />
+
+                          {/* Current Mark Position */}
+                          <div
+                            style={{ left: `${currentPct}%` }}
+                            className="absolute top-0 bottom-0 w-1.5 bg-cyan-400 z-20 shadow-[0_0_8px_#22d3ee]"
+                            title={`Current Mark Price: ${formatUSD(pos.currentPrice)}`}
+                          />
+                        </div>
+
+                        <div className="flex justify-between text-[7.5px] text-slate-500 px-0.5 pt-0.5">
+                          <span>Trailing SL Active</span>
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-amber-300 font-medium">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 inline-block" />
+                              Buy: {formatUSD(pos.entryPrice)}
+                            </span>
+                            <span className="flex items-center gap-1 text-cyan-400 font-semibold">
+                              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse inline-block" />
+                              Mark: {formatUSD(pos.currentPrice)}
+                            </span>
+                          </div>
+                          <span>Limit TP Active</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-[#040714] border border-[#17234d] p-3 rounded-sm text-center">
