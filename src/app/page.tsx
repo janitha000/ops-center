@@ -229,7 +229,17 @@ export default function OperationsDashboard() {
 
           {/* ZONE 5: MISSION CONTROL & OPS BAY (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
-            <OpsBar bot={bot} tasks={sprintTasks} />
+            <OpsBar
+              bot={bot}
+              tasks={sprintTasks}
+              health={health}
+              gridFleet={gridFleet}
+              investments={investments}
+              spendIncome={spendIncome}
+              finance={finance}
+              onGlobalSync={fetchSyncData}
+              refreshing={refreshing}
+            />
           </div>
         </div>
 
