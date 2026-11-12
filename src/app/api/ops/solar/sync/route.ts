@@ -73,6 +73,37 @@ export async function POST(req: NextRequest) {
     }
     if (lifetimeMwh <= 0) lifetimeMwh = yearlyMwh || 3.84;
 
+    // Auto-detect and reconcile shifted or swapped yield metrics
+    // In solar PV: Today's Yield < Month's Yield < Year's Yield <= Lifetime Total
+    let finalDailyKwh = dailyKwh;
+    let finalMonthlyKwh = monthlyKwh;
+    let finalYearlyMwh = yearlyMwh;
+    let finalLifetimeMwh = lifetimeMwh;
+
+    if (finalDailyKwh > 40 || (finalMonthlyKwh > 1000 && finalMonthlyKwh > finalDailyKwh) || (finalLifetimeMwh < 2 && finalDailyKwh > 50)) {
+      const raw = [finalDailyKwh, finalMonthlyKwh, finalYearlyMwh, finalLifetimeMwh];
+      
+      // Monthly MTD: typically 35 - 900 kWh
+      const mCandidate = raw.find(n => n > 35 && n < 900);
+      if (mCandidate) finalMonthlyKwh = mCandidate;
+
+      // Yearly YTD: either > 900 kWh or in MWh around 2 - 20
+      const yCandidate = raw.find(n => n >= 900 && n <= 10000);
+      if (yCandidate) finalYearlyMwh = Number((yCandidate / 1000).toFixed(2));
+      else {
+        const yMwhCandidate = raw.find(n => n >= 2 && n <= 20 && n !== finalMonthlyKwh);
+        if (yMwhCandidate) finalYearlyMwh = Number(yMwhCandidate.toFixed(2));
+      }
+
+      // Total Lifetime: the largest MWh number (>= yearly)
+      const tCandidate = raw.find(n => n >= (finalYearlyMwh || 2) && n <= 50);
+      if (tCandidate) finalLifetimeMwh = Number(tCandidate.toFixed(2));
+
+      // Today's Yield: the smallest number <= 35
+      const dCandidate = raw.find(n => n > 0 && n <= 35 && n !== finalLifetimeMwh && n !== finalYearlyMwh);
+      if (dCandidate) finalDailyKwh = Number(dCandidate.toFixed(2));
+    }
+
     const netGridKw = typeof body.netGridKw === "number"
       ? body.netGridKw
       : typeof body.feedInPower === "number"
@@ -96,13 +127,13 @@ export async function POST(req: NextRequest) {
 
     const payload = {
       currentKw: Number(currentKw.toFixed(2)),
-      dailyKwh: Number(dailyKwh.toFixed(2)),
+      dailyKwh: Number(finalDailyKwh.toFixed(2)),
       dailyTargetKwh,
-      monthlyKwh: monthlyKwh > 0 ? Number(monthlyKwh.toFixed(1)) : undefined,
-      yearlyMwh: yearlyMwh > 0 ? Number(yearlyMwh.toFixed(2)) : 3.84,
+      monthlyKwh: finalMonthlyKwh > 0 ? Number(finalMonthlyKwh.toFixed(1)) : undefined,
+      yearlyMwh: finalYearlyMwh > 0 ? Number(finalYearlyMwh.toFixed(2)) : 3.84,
       gridExportStatus,
       netGridKw: Number(netGridKw.toFixed(2)),
-      lifetimeMwh: Number(lifetimeMwh.toFixed(2)),
+      lifetimeMwh: Number(finalLifetimeMwh.toFixed(2)),
       stationCode: body.stationCode || "NE=58772902",
       lastSynced: new Date().toISOString(),
       syncedFrom: "fusionsolar",
