@@ -294,6 +294,11 @@ export default function OperationsDashboard() {
     }
   }, [isAuthenticated, fetchSyncData]);
 
+  // Calculate live zone synchronization telemetry unconditionally at the top level
+  const zoneSyncStatuses = useMemo(() => {
+    return calculateZoneSyncStatus(data);
+  }, [data, currentTime]);
+
   if (isAuthenticated === null) {
     return (
       <div className="min-h-screen bg-[#090b0e] flex items-center justify-center font-mono text-xs text-slate-500">
@@ -316,11 +321,6 @@ export default function OperationsDashboard() {
   }
 
   const { health, spendIncome, finance, investments, bot, gridFleet, sprintTasks, crossDomain } = data;
-
-  // Calculate live zone synchronization telemetry (threshold: 3 hours)
-  const zoneSyncStatuses = useMemo(() => {
-    return calculateZoneSyncStatus(data);
-  }, [data, currentTime]);
 
   return (
     <div className="min-h-screen bg-[#090b0e] text-[#e6edf3] font-sans antialiased selection:bg-cyan-500 selection:text-slate-950 pb-10">
