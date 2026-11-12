@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { TrendingUp, ArrowUpRight, DollarSign, Wallet, ShieldCheck, ChevronRight, Banknote, RefreshCw } from "lucide-react";
+import { TrendingUp, ArrowUpRight, DollarSign, Wallet, ShieldCheck, ChevronRight, Banknote, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { FinancialData, NetWorthCategory } from "@/lib/types";
 import { formatLKR, formatUSD, formatPercent } from "@/lib/utils";
 import { PalSyncModal } from "./PalSyncModal";
+import { StockMinPriceModal } from "./StockMinPriceModal";
 
 interface FinancialBayProps {
   finance: FinancialData;
@@ -47,6 +48,8 @@ export function FinancialBay({
 }: FinancialBayProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isPalSyncOpen, setIsPalSyncOpen] = useState(false);
+  const [minPrices, setMinPrices] = useState<Record<string, number>>({});
+  const [isMinPriceModalOpen, setIsMinPriceModalOpen] = useState(false);
   const [, setNowTick] = useState(Date.now());
   const LKR_PER_USD = 310;
 
@@ -54,6 +57,45 @@ export function FinancialBay({
     const timer = setInterval(() => setNowTick(Date.now()), 15000);
     return () => clearInterval(timer);
   }, []);
+
+  // Hydrate min prices from localStorage and server
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem("ops_stock_min_prices_v1");
+      if (cached) {
+        setMinPrices(JSON.parse(cached));
+      }
+    } catch {}
+
+    fetch("/api/ops/stocks/min-targets")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.minPrices) {
+          setMinPrices(data.minPrices);
+          try {
+            localStorage.setItem("ops_stock_min_prices_v1", JSON.stringify(data.minPrices));
+          } catch {}
+        }
+      })
+      .catch((err) => console.warn("Could not load stock min prices:", err));
+  }, []);
+
+  const handleSaveMinPrices = async (newMinPrices: Record<string, number>) => {
+    setMinPrices(newMinPrices);
+    try {
+      localStorage.setItem("ops_stock_min_prices_v1", JSON.stringify(newMinPrices));
+    } catch {}
+
+    try {
+      await fetch("/api/ops/stocks/min-targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minPrices: newMinPrices }),
+      });
+    } catch (err) {
+      console.error("Failed to save min prices to server:", err);
+    }
+  };
 
   const lastStockSyncStr = formatRelativeTime(finance.stocks.lastPalSync);
   const lastCashflowSyncStr = formatRelativeTime(finance.lastUpdated);
@@ -315,6 +357,14 @@ export function FinancialBay({
               >
                 {finance.stocks.syncedFrom === "pal.lk" ? "● PAL SYNCED" : "⇄ PAL SYNC"}
               </button>
+              <button
+                onClick={() => setIsMinPriceModalOpen(true)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] font-mono font-bold bg-[#0b1612] hover:bg-[#133323] border border-[#164e35] text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
+                title="Configure minimum price targets per stock"
+              >
+                <SlidersHorizontal className="h-2.5 w-2.5 text-cyan-400" />
+                <span>MIN TARGETS</span>
+              </button>
               {lastStockSyncStr && (
                 <span className="text-[8px] font-mono text-slate-500 font-normal lowercase">
                   ({lastStockSyncStr})
@@ -355,16 +405,54 @@ export function FinancialBay({
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-1 font-mono text-[11px]">
             {finance.stocks.tickers.map((t) => {
               const isProfit = (t.unrealizedPnlPct ?? 0) >= 0;
+              const cleanSym = t.symbol.split(".")[0].toUpperCase();
+              const minPrice = minPrices[cleanSym] ?? minPrices[t.symbol.toUpperCase()];
+              const hasMin = typeof minPrice === "number" && minPrice > 0;
+              const isBelowMin = hasMin && t.price < minPrice;
+
+              // Color rule (only current price):
+              // Green -> if below min
+              // white -> if above min
+              let priceColorClass = "text-white font-bold";
+              if (hasMin) {
+                priceColorClass = isBelowMin ? "text-emerald-400 font-bold" : "text-white font-bold";
+              }
+
               return (
                 <div key={t.symbol} className="bg-[#040c08] border border-[#133323] p-1.5 rounded-sm flex flex-col justify-between">
                   <div className="flex justify-between items-center text-[10px]">
-                    <span className="font-bold text-slate-200" title={t.name}>{t.symbol.split(".")[0]}</span>
+                    <span className="font-bold text-slate-200" title={t.name}>{cleanSym}</span>
                     <span className={isProfit ? "text-emerald-400 font-semibold" : "text-rose-400 font-semibold"}>
                       {formatPercent(t.unrealizedPnlPct ?? 0)}
                     </span>
                   </div>
                   <div className="flex justify-between items-baseline mt-0.5">
-                    <span className="text-xs font-bold text-slate-200">{formatLKR(t.price)}</span>
+                    <div className="flex items-baseline gap-1">
+                      <span
+                        className={`text-xs ${priceColorClass}`}
+                        title={
+                          hasMin
+                            ? `Current: ${formatLKR(t.price)} | Min Target: ${formatLKR(minPrice)} (${
+                                isBelowMin ? "BELOW MIN - BUY ZONE" : "ABOVE MIN"
+                              })`
+                            : `Current Price: ${formatLKR(t.price)} (No min target set)`
+                        }
+                      >
+                        {formatLKR(t.price)}
+                      </span>
+                      {hasMin && (
+                        <span
+                          className={`text-[8px] font-mono font-bold px-0.5 rounded-2xs ${
+                            isBelowMin
+                              ? "text-emerald-400 bg-emerald-950/80 border border-emerald-800/60"
+                              : "text-slate-500"
+                          }`}
+                          title={`Configured Min Target: ${formatLKR(minPrice)}`}
+                        >
+                          &lt;{Math.round(minPrice)}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[9px] text-slate-500">
                       {t.quantity > 0 ? `${t.quantity.toLocaleString()} sh` : ""}
                     </span>
@@ -395,6 +483,15 @@ export function FinancialBay({
             window.location.reload();
           }, 600);
         }}
+      />
+
+      {/* Stock Minimum Price Targets Settings Modal */}
+      <StockMinPriceModal
+        isOpen={isMinPriceModalOpen}
+        onClose={() => setIsMinPriceModalOpen(false)}
+        tickers={finance.stocks.tickers}
+        minPrices={minPrices}
+        onSave={handleSaveMinPrices}
       />
     </div>
   );

@@ -23,6 +23,7 @@ const memoryOverrides = new Map<string, InstrumentDateOverride>([
 let memoryBotCache: Record<string, unknown> | null = null;
 let memoryPalHoldings: any = null;
 let memorySolarTelemetry: any = null;
+let memoryStockMinPrices: Record<string, number> = {};
 
 function getSql() {
   const url = process.env.OPS_DATABASE_URL || process.env.INVESTOR_DATABASE_URL;
@@ -301,5 +302,51 @@ export async function fetchFusionSolarKioskData(token = DEFAULT_FUSIONSOLAR_KIOS
   } catch (err) {
     console.warn("FusionSolar Kiosk fetch error:", err);
     return null;
+  }
+}
+
+export async function getStockMinPrices(): Promise<Record<string, number>> {
+  try {
+    const kvData = await kv.get<Record<string, number>>("ops_stock_min_prices_v1");
+    if (kvData && typeof kvData === "object") return kvData;
+  } catch (kvErr) {
+    // fallback
+  }
+
+  const sql = getSql();
+  if (sql) {
+    try {
+      const rows = await sql`SELECT data FROM ops_bot_cache WHERE id = 2`;
+      if (rows.length > 0 && rows[0].data) {
+        return rows[0].data as Record<string, number>;
+      }
+    } catch {}
+  }
+
+  return memoryStockMinPrices;
+}
+
+export async function saveStockMinPrices(prices: Record<string, number>): Promise<void> {
+  memoryStockMinPrices = prices;
+
+  try {
+    await kv.set("ops_stock_min_prices_v1", prices);
+  } catch (kvErr) {
+    console.warn("Error saving stock min prices to Upstash KV:", kvErr);
+  }
+
+  const sql = getSql();
+  if (!sql) return;
+  try {
+    await ensureOpsSchema();
+    await sql`
+      INSERT INTO ops_bot_cache (id, data, updated_at)
+      VALUES (2, ${JSON.stringify(prices)}::jsonb, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        data = EXCLUDED.data,
+        updated_at = NOW();
+    `;
+  } catch (err) {
+    console.warn("Error saving stock min prices to Postgres:", err);
   }
 }
