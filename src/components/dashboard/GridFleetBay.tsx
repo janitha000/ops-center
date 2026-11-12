@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Sun, Zap, BatteryCharging, Power, BarChart2, Calendar } from "lucide-react";
+import { Sun, Zap, BatteryCharging, Power, BarChart2 } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -58,7 +58,6 @@ function CustomSolarTooltip({ active, payload }: any) {
 
 export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const { solar, fleet } = gridFleet;
-  const [viewMode, setViewMode] = useState<"day" | "month">("day");
   const [chargingOverride, setChargingOverride] = useState(fleet.isCharging);
   const [isSolarSyncOpen, setIsSolarSyncOpen] = useState(false);
 
@@ -70,7 +69,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const filled = Math.round((fleet.batteryPct / 100) * segments);
   const batteryMeter = "█".repeat(filled) + "░".repeat(segments - filled);
 
-  // ── Month View Calculations ──
+  // ── Month Calculations ──
   const now = new Date();
   const currentDay = now.getDate();
   const history = solar.historyMonth || [];
@@ -86,10 +85,10 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const monthlyRevenueLkr = Math.round(mtdExported * 37); // CEB Net-Plus tariff @ 37 LKR/kWh
 
   return (
-    <div className="bg-[#140d04]/80 border border-[#3a2408] border-t border-t-white/10 rounded-md p-3.5 flex flex-col justify-between h-full font-sans">
-      {/* ── Header ── */}
+    <div className="bg-[#140d04]/80 border border-[#3a2408] border-t border-t-white/10 rounded-md p-3 flex flex-col justify-between h-full font-sans">
       <div>
-        <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[#3a2408]">
+        {/* ── BAY HEADER ── */}
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#3a2408]">
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b] animate-pulse" />
             <h2 className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
@@ -98,30 +97,6 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
           </div>
 
           <div className="flex items-center gap-1.5 font-mono text-[9px]">
-            {/* View Mode Toggle: Day vs Month Bar Chart */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setViewMode("day")}
-                className={`px-2 py-0.5 rounded-sm font-bold transition-all ${
-                  viewMode === "day"
-                    ? "bg-amber-600 text-slate-950 shadow-[0_0_8px_#f59e0b]"
-                    : "bg-[#251705] text-slate-400 hover:text-slate-200 border border-[#3a2408]"
-                }`}
-              >
-                DAY
-              </button>
-              <button
-                onClick={() => setViewMode("month")}
-                className={`px-2 py-0.5 rounded-sm font-bold transition-all ${
-                  viewMode === "month"
-                    ? "bg-amber-600 text-slate-950 shadow-[0_0_8px_#f59e0b]"
-                    : "bg-[#251705] text-slate-400 hover:text-slate-200 border border-[#3a2408]"
-                }`}
-              >
-                MONTH
-              </button>
-            </div>
-
             <button
               onClick={() => setIsSolarSyncOpen(true)}
               className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-colors border flex items-center gap-1 ${
@@ -134,225 +109,178 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
               <span>{solar.syncedFrom === "fusionsolar" ? "● SOLAR SYNCED" : "⇄ SOLAR SYNC"}</span>
               {syncTimeStr && <span className="text-[7.5px] text-slate-500 lowercase">({syncTimeStr})</span>}
             </button>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40 hidden sm:inline">
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40">
               NET-METER
             </span>
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════════════════════
-            VIEW 1: DAY VIEW (LIVE ROOFTOP SOLAR & EV TELEMETRY)
-        ══════════════════════════════════════════════════════════════════════ */}
-        {viewMode === "day" && (
-          <>
-            {/* Rooftop Solar Current Telemetry Card */}
-            <div className="bg-[#0d0702] border border-[#3a2408] p-2.5 rounded mb-3">
-              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
-                <span className="flex items-center gap-1 text-amber-300">
-                  <Sun className="h-3 w-3 text-amber-400" />
-                  <span>Rooftop Solar (Current)</span>
-                </span>
-                <span className="font-mono text-emerald-400 font-bold">{solar.gridExportStatus}</span>
-              </div>
+        {/* ── CARD 1: ROOFTOP SOLAR REAL-TIME TELEMETRY ── */}
+        <div className="bg-[#0d0702] border border-[#3a2408] p-2 rounded mb-2">
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
+            <span className="flex items-center gap-1 text-amber-300">
+              <Sun className="h-3 w-3 text-amber-400" />
+              <span>Rooftop Solar (Current)</span>
+            </span>
+            <span className="font-mono text-emerald-400 font-bold">{solar.gridExportStatus}</span>
+          </div>
 
-              <div className="flex items-baseline justify-between mb-1">
-                <div className="text-xl font-bold font-mono text-amber-300 tracking-tight">
-                  {solar.currentKw.toFixed(2)} kW
-                </div>
-                <div className="text-xs font-mono text-slate-300">
-                  Export: <span className="text-emerald-400 font-semibold">{solar.netGridKw.toFixed(2)} kW</span>
-                </div>
-              </div>
-
-              {/* Daily Generation vs Target */}
-              <div className="mt-1">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400 mb-0.5">
-                  <span>Today: {solar.dailyKwh.toFixed(1)} kWh</span>
-                  <span>Target: {solar.dailyTargetKwh} kWh ({solarTargetPct}%)</span>
-                </div>
-                <div className="h-1.5 w-full bg-[#201405] rounded-sm overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-sm transition-all duration-500"
-                    style={{ width: `${solarTargetPct}%` }}
-                  />
-                </div>
-              </div>
+          <div className="flex items-baseline justify-between mb-1">
+            <div className="text-xl font-bold font-mono text-amber-300 tracking-tight">
+              {solar.currentKw.toFixed(2)} kW
             </div>
-
-            {/* EV Fleet Telemetry (BYD Sealion 6 AWD) */}
-            <div className="bg-[#0d0702] border border-[#3a2408] p-2.5 rounded mb-3">
-              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
-                <span className="flex items-center gap-1 text-amber-300">
-                  <Zap className="h-3 w-3 text-amber-400" />
-                  <span>{fleet.vehicleName}</span>
-                </span>
-                <span className="text-[10px] font-mono text-amber-300">
-                  {fleet.chargerConnected ? "Home Pod Connected" : "Unplugged"}
-                </span>
-              </div>
-
-              <div className="flex items-baseline justify-between">
-                <div className="text-xl font-bold font-mono text-amber-300 tracking-tight">
-                  {fleet.batteryPct}% <span className="text-xs font-normal text-slate-400">SOC</span>
-                </div>
-                <div className="text-xs font-mono text-slate-300">
-                  Est Range: <strong className="text-amber-300">{fleet.estimatedRangeKm} km</strong> (EV)
-                </div>
-              </div>
-
-              {/* Segmented Battery Meter */}
-              <div className="mt-1.5 text-[11px] font-mono tracking-tighter text-amber-400 select-none">
-                {batteryMeter}
-              </div>
-
-              {/* Smart Charge Trigger */}
-              <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1 pt-1.5 border-t border-[#3a2408]/80">
-                <span>Schedule: Off-Peak (23:00)</span>
-                <button
-                  onClick={() => setChargingOverride(!chargingOverride)}
-                  className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase transition-colors ${
-                    chargingOverride
-                      ? "bg-amber-500 text-slate-950 font-mono"
-                      : "bg-[#251705] text-amber-300 border border-[#3a2408] hover:bg-[#321f07] font-mono"
-                  }`}
-                >
-                  {chargingOverride ? "⚡ Charging" : "Start Charge"}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════════════════
-            VIEW 2: MONTH VIEW (MONTHLY SOLAR GENERATION BAR CHART)
-        ══════════════════════════════════════════════════════════════════════ */}
-        {viewMode === "month" && (
-          <div className="space-y-2.5">
-            {/* Monthly KPI Overview Strip */}
-            <div className="bg-[#0d0702] border border-[#3a2408] p-2.5 rounded">
-              <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1">
-                <span className="flex items-center gap-1.5 text-amber-300">
-                  <BarChart2 className="h-3 w-3 text-amber-400" />
-                  <span>Month Solar Generation (November)</span>
-                </span>
-                <span className="text-emerald-400 font-bold">
-                  Pace: {mtdPacePct}% ({mtdGenerated.toFixed(1)} kWh)
-                </span>
-              </div>
-
-              {/* Primary Month Metrics Grid */}
-              <div className="grid grid-cols-3 gap-1.5 font-mono text-center my-1.5">
-                <div className="bg-[#180e05] p-1.5 rounded border border-[#3a2408]">
-                  <span className="block text-[8px] text-slate-400 uppercase">MTD Yield</span>
-                  <span className="text-xs font-bold text-amber-300">{mtdGenerated.toFixed(1)} kWh</span>
-                  <span className="block text-[7.5px] text-slate-500">Day {currentDay} of 30</span>
-                </div>
-                <div className="bg-[#180e05] p-1.5 rounded border border-[#3a2408]">
-                  <span className="block text-[8px] text-slate-400 uppercase">Daily Average</span>
-                  <span className="text-xs font-bold text-slate-200">{avgDailyKwh} kWh/d</span>
-                  <span className="block text-[7.5px] text-amber-400">Target: 30.0</span>
-                </div>
-                <div className="bg-[#180e05] p-1.5 rounded border border-[#3a2408]">
-                  <span className="block text-[8px] text-slate-400 uppercase">Net-Plus Revenue</span>
-                  <span className="text-xs font-bold text-emerald-400">Rs. {monthlyRevenueLkr.toLocaleString()}</span>
-                  <span className="block text-[7.5px] text-slate-500">@ Rs. 37/kWh</span>
-                </div>
-              </div>
-
-              {/* Monthly Day-by-Day Recharts Bar Chart */}
-              <div className="h-[125px] w-full mt-2 font-mono">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={history} margin={{ top: 8, right: 2, left: -24, bottom: -5 }}>
-                    <CartesianGrid strokeDasharray="2 2" stroke="#251705" vertical={false} />
-                    <XAxis
-                      dataKey="day"
-                      stroke="#785324"
-                      tick={{ fontSize: 8, fill: "#a8783e" }}
-                      interval={2}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      stroke="#785324"
-                      tick={{ fontSize: 8, fill: "#a8783e" }}
-                      domain={[0, 40]}
-                      tickLine={false}
-                    />
-                    <ReferenceLine
-                      y={solar.dailyTargetKwh || 30.0}
-                      stroke="#f59e0b"
-                      strokeDasharray="3 3"
-                      strokeWidth={1}
-                    />
-                    <Tooltip content={<CustomSolarTooltip />} />
-                    <Bar dataKey="generationKwh" radius={[2, 2, 0, 0]}>
-                      {history.map((entry, index) => {
-                        const isToday = entry.day === currentDay;
-                        const isFuture = entry.day > currentDay;
-                        const isTargetMet = entry.generationKwh >= (solar.dailyTargetKwh || 30.0);
-                        const fill = isFuture
-                          ? "#1a1005"
-                          : isToday
-                          ? "#10b981"
-                          : isTargetMet
-                          ? "#f59e0b"
-                          : "#b45309";
-                        return <Cell key={`cell-${index}`} fill={fill} />;
-                      })}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Legend & Summary */}
-              <div className="flex items-center justify-between text-[8px] font-mono text-slate-500 mt-1 pt-1 border-t border-[#251705]">
-                <div className="flex items-center gap-2">
-                  <span className="flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 bg-[#f59e0b] inline-block" />
-                    <span>Past Days</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 bg-[#10b981] inline-block" />
-                    <span>Today (Live)</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2.5 border-t border-dashed border-amber-400 inline-block" />
-                    <span>30 kWh Goal</span>
-                  </span>
-                </div>
-                <span className="text-amber-400 font-bold">PROJ: {Math.round(Number(avgDailyKwh) * 30)} kWh</span>
-              </div>
-            </div>
-
-            {/* EV Fleet Monthly Solar Charging Contribution */}
-            <div className="bg-[#0d0702] border border-[#3a2408] p-2 rounded flex items-center justify-between text-[10px] font-mono">
-              <div className="flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                <div>
-                  <span className="text-slate-200 font-semibold">{fleet.vehicleName} Solar Fuel</span>
-                  <span className="block text-[8px] text-slate-500">100% Zero-Carbon Home Pod Charging</span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-emerald-400 font-bold">84 kWh MTD</span>
-                <span className="block text-[8px] text-slate-500">~520 km Added</span>
-              </div>
+            <div className="text-xs font-mono text-slate-300">
+              Export: <span className="text-emerald-400 font-semibold">{solar.netGridKw.toFixed(2)} kW</span>
             </div>
           </div>
-        )}
+
+          {/* Daily Generation vs Target Progress Bar */}
+          <div>
+            <div className="flex justify-between text-[9px] font-mono text-slate-400 mb-0.5">
+              <span>Today: <strong className="text-amber-300 font-semibold">{solar.dailyKwh.toFixed(1)} kWh</strong></span>
+              <span>Target: {solar.dailyTargetKwh} kWh ({solarTargetPct}%)</span>
+            </div>
+            <div className="h-1.5 w-full bg-[#201405] rounded-none overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-none transition-all duration-500"
+                style={{ width: `${solarTargetPct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── CARD 2: MONTHLY SOLAR GENERATION BAR CHART (INTEGRATED ON SAME PANEL) ── */}
+        <div className="bg-[#0d0702] border border-[#3a2408] p-2 rounded mb-2 font-mono">
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
+            <span className="flex items-center gap-1.5 text-amber-300">
+              <BarChart2 className="h-3 w-3 text-amber-400" />
+              <span>November Generation Yield</span>
+            </span>
+            <span className="text-emerald-400 text-[10px] font-bold">
+              MTD: {mtdGenerated.toFixed(1)} kWh
+            </span>
+          </div>
+
+          {/* Compact Bar Chart */}
+          <div className="h-[95px] w-full mt-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={history} margin={{ top: 4, right: 2, left: -25, bottom: -5 }}>
+                <CartesianGrid strokeDasharray="2 2" stroke="#251705" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  stroke="#785324"
+                  tick={{ fontSize: 7.5, fill: "#a8783e" }}
+                  interval={2}
+                  tickLine={false}
+                />
+                <YAxis
+                  stroke="#785324"
+                  tick={{ fontSize: 7.5, fill: "#a8783e" }}
+                  domain={[0, 40]}
+                  tickLine={false}
+                />
+                <ReferenceLine
+                  y={solar.dailyTargetKwh || 30.0}
+                  stroke="#f59e0b"
+                  strokeDasharray="2 2"
+                  strokeWidth={1}
+                />
+                <Tooltip content={<CustomSolarTooltip />} />
+                <Bar dataKey="generationKwh" radius={[2, 2, 0, 0]}>
+                  {history.map((entry, index) => {
+                    const isToday = entry.day === currentDay;
+                    const isFuture = entry.day > currentDay;
+                    const isTargetMet = entry.generationKwh >= (solar.dailyTargetKwh || 30.0);
+                    const fill = isFuture
+                      ? "#1a1005"
+                      : isToday
+                      ? "#10b981"
+                      : isTargetMet
+                      ? "#f59e0b"
+                      : "#b45309";
+                    return <Cell key={`cell-${index}`} fill={fill} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Micro Legend & MTD Metric Strip */}
+          <div className="flex items-center justify-between text-[7.5px] text-slate-500 mt-1 pt-1 border-t border-[#251705]">
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 bg-[#f59e0b] inline-block" />
+                <span>Yield</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 bg-[#10b981] inline-block" />
+                <span>Today (Live)</span>
+              </span>
+              <span className="text-amber-400/80">30k Goal</span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-300">
+              <span>Avg: <strong className="text-amber-300">{avgDailyKwh} kWh/d</strong></span>
+              <span>•</span>
+              <span className="text-emerald-400 font-semibold">Rs. {monthlyRevenueLkr.toLocaleString()} Net-Plus</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── CARD 3: EV FLEET TELEMETRY (BYD Sealion 6 AWD) ── */}
+        <div className="bg-[#0d0702] border border-[#3a2408] p-2 rounded mb-1 font-mono">
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
+            <span className="flex items-center gap-1 text-amber-300">
+              <Zap className="h-3 w-3 text-amber-400" />
+              <span>{fleet.vehicleName}</span>
+            </span>
+            <span className="text-[9px] text-amber-300">
+              {fleet.chargerConnected ? "Home Pod Connected" : "Unplugged"}
+            </span>
+          </div>
+
+          <div className="flex items-baseline justify-between">
+            <div className="text-base font-bold text-amber-300 tracking-tight">
+              {fleet.batteryPct}% <span className="text-[10px] font-normal text-slate-400">SOC</span>
+            </div>
+            <div className="text-[10px] text-slate-300">
+              Est Range: <strong className="text-amber-300">{fleet.estimatedRangeKm} km</strong>
+            </div>
+          </div>
+
+          {/* Segmented Battery Meter */}
+          <div className="text-[10px] tracking-tighter text-amber-400 select-none my-0.5">
+            {batteryMeter}
+          </div>
+
+          {/* Smart Charge Trigger */}
+          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1 pt-1 border-t border-[#3a2408]/80">
+            <span>Schedule: Off-Peak (23:00)</span>
+            <button
+              onClick={() => setChargingOverride(!chargingOverride)}
+              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-colors ${
+                chargingOverride
+                  ? "bg-amber-500 text-slate-950"
+                  : "bg-[#251705] text-amber-300 border border-[#3a2408] hover:bg-[#321f07]"
+              }`}
+            >
+              {chargingOverride ? "⚡ Charging" : "Start Charge"}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* ── Sub-telemetry Footer ── */}
-      <div className="pt-2 border-t border-[#3a2408] grid grid-cols-3 gap-1.5 text-[10px] font-mono text-slate-400">
+      {/* ── BAY FOOTER TELEMETRY ── */}
+      <div className="pt-2 border-t border-[#3a2408] grid grid-cols-3 gap-1.5 text-[9.5px] font-mono text-slate-400">
         <div>
-          <span className="block text-[8px] uppercase tracking-wider text-slate-500">Lifetime Solar</span>
+          <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Lifetime Solar</span>
           <span className="text-slate-200 font-semibold">{solar.lifetimeMwh.toFixed(2)} MWh</span>
         </div>
         <div>
-          <span className="block text-[8px] uppercase tracking-wider text-slate-500">Grid Tariff Mode</span>
+          <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Grid Tariff Mode</span>
           <span className="text-amber-300 font-semibold">Net-Plus</span>
         </div>
         <div>
-          <span className="block text-[8px] uppercase tracking-wider text-slate-500">Pod Status</span>
+          <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Pod Status</span>
           <span className="text-emerald-400 font-semibold">Ready</span>
         </div>
       </div>
@@ -365,6 +293,8 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
         syncedFrom={solar.syncedFrom}
         currentKw={solar.currentKw}
         dailyKwh={solar.dailyKwh}
+        monthlyKwh={solar.monthlyKwh}
+        lifetimeMwh={solar.lifetimeMwh}
         onSyncSuccess={() => {
           setTimeout(() => {
             window.location.reload();

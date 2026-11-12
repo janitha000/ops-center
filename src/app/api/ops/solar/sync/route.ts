@@ -40,9 +40,13 @@ export async function POST(req: NextRequest) {
       ? body.dailyKwh
       : parseFloat(String(body.dailyKwh || body.dailyYield || body.todayYield || "0").replace(/[^\d\.]/g, "")) || 0;
 
+    const monthlyKwh = typeof body.monthlyKwh === "number"
+      ? body.monthlyKwh
+      : parseFloat(String(body.monthlyKwh || body.monthYield || body.monthlyYield || body.monthEnergy || "0").replace(/[^\d\.]/g, "")) || 0;
+
     const lifetimeMwh = typeof body.lifetimeMwh === "number"
       ? body.lifetimeMwh
-      : parseFloat(String(body.lifetimeMwh || body.totalYield || body.totalPower || "0").replace(/[^\d\.]/g, "")) || 14.82;
+      : parseFloat(String(body.lifetimeMwh || body.totalYield || body.totalPower || "0").replace(/[^\d\.]/g, "")) || 3.84;
 
     const netGridKw = typeof body.netGridKw === "number"
       ? body.netGridKw
@@ -61,16 +65,22 @@ export async function POST(req: NextRequest) {
       gridExportStatus = "NEUTRAL";
     }
 
+    const historyMonth = Array.isArray(body.historyMonth) && body.historyMonth.length > 0
+      ? body.historyMonth
+      : undefined;
+
     const payload = {
       currentKw: Number(currentKw.toFixed(2)),
       dailyKwh: Number(dailyKwh.toFixed(2)),
       dailyTargetKwh,
+      monthlyKwh: monthlyKwh > 0 ? Number(monthlyKwh.toFixed(1)) : undefined,
       gridExportStatus,
       netGridKw: Number(netGridKw.toFixed(2)),
       lifetimeMwh: Number(lifetimeMwh.toFixed(2)),
       stationCode: body.stationCode || "NE=58772902",
       lastSynced: new Date().toISOString(),
       syncedFrom: "fusionsolar",
+      historyMonth,
     };
 
     await saveSolarTelemetry(payload);

@@ -77,32 +77,40 @@ export async function GET(req: NextRequest) {
   const currentDay = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-  const historyMonth = [];
-  for (let d = 1; d <= daysInMonth; d++) {
-    const isPast = d < currentDay;
-    const isToday = d === currentDay;
-    const pastItem = pastSolarDays[d - 1];
+  let historyMonth = liveSolar?.historyMonth;
+  if (!historyMonth || historyMonth.length === 0) {
+    // If monthlyKwh was synced, scale past days to exactly match the synced monthlyKwh
+    const targetPastSum = (liveSolar?.monthlyKwh && liveSolar.monthlyKwh > solarBase.dailyKwh)
+      ? liveSolar.monthlyKwh - solarBase.dailyKwh
+      : null;
 
-    let gen = 0;
-    let exp = 0;
-    if (isToday) {
-      gen = Number(solarBase.dailyKwh.toFixed(1));
-      exp = Number((solarBase.dailyKwh * 0.76).toFixed(1));
-    } else if (isPast && pastItem) {
-      gen = pastItem.kwh;
-      exp = pastItem.exp;
-    } else if (isPast) {
-      gen = 28.5;
-      exp = 21.0;
+    const baseSum = pastSolarDays.slice(0, currentDay - 1).reduce((s, p) => s + p.kwh, 0);
+    const scale = targetPastSum && baseSum > 0 ? targetPastSum / baseSum : 1;
+
+    historyMonth = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isPast = d < currentDay;
+      const isToday = d === currentDay;
+      const pastItem = pastSolarDays[d - 1];
+
+      let gen = 0;
+      let exp = 0;
+      if (isToday) {
+        gen = Number(solarBase.dailyKwh.toFixed(1));
+        exp = Number((solarBase.dailyKwh * 0.76).toFixed(1));
+      } else if (isPast && pastItem) {
+        gen = Number((pastItem.kwh * scale).toFixed(1));
+        exp = Number((pastItem.exp * scale).toFixed(1));
+      }
+
+      historyMonth.push({
+        day: d,
+        date: `Nov ${d}`,
+        generationKwh: gen,
+        exportKwh: exp,
+        targetKwh: 30.0,
+      });
     }
-
-    historyMonth.push({
-      day: d,
-      date: `Nov ${d}`,
-      generationKwh: gen,
-      exportKwh: exp,
-      targetKwh: 30.0,
-    });
   }
 
   const solar = {
