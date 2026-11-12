@@ -326,20 +326,17 @@ export default function OperationsDashboard() {
     <div className="min-h-screen bg-[#090b0e] text-[#e6edf3] font-sans antialiased selection:bg-cyan-500 selection:text-slate-950 pb-10">
       {/* ── HIGH-DENSITY SYSTEM OPS BAR (TOP) ── */}
       <header className="border-b border-[#161b22] bg-[#06080b] px-3 py-2 sticky top-0 z-40">
-        <div className="max-w-[1720px] mx-auto flex flex-col xl:flex-row items-start xl:items-center justify-between gap-2.5">
-          {/* Brand & Telemetry Status */}
+        <div className="max-w-[1720px] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5">
+          {/* Brand & Live Clock */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-slate-100 tracking-wider">
+            <div className="flex items-center gap-2 font-mono text-sm font-bold text-slate-100 tracking-wider">
               <span className="h-2 w-2 bg-emerald-500 rounded-none inline-block animate-pulse" />
-              LIFE OPS // DOMAIN-ZONED TELEMETRY
+              OPS Center
             </div>
-            <span className="text-[10px] font-mono text-slate-500 hidden md:inline">|</span>
-            <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
-              <span className="text-emerald-400">● 5/5 DAEMONS ONLINE</span>
-              <span>•</span>
-              <span>HOST: AWS EC2 + NEON</span>
-              <span>•</span>
-              <span className="text-cyan-400 font-semibold">{currentTime}</span>
+            <span className="text-[10px] font-mono text-slate-600 hidden sm:inline">|</span>
+            <div className="flex items-center gap-1.5 font-mono text-[11px] text-cyan-400 font-medium">
+              <Clock className="h-3 w-3 text-cyan-400/80" />
+              <span>{currentTime}</span>
             </div>
           </div>
 
@@ -391,32 +388,8 @@ export default function OperationsDashboard() {
             ))}
           </div>
 
-          {/* Quick Controls & Currency Switcher */}
+          {/* Quick Controls */}
           <div className="flex items-center gap-2">
-            {/* Horizon Selector */}
-            <div className="flex items-center gap-1 bg-[#0d1117] border border-[#1e2633] rounded-sm p-0.5 font-mono text-[10px]">
-              {(
-                [
-                  { id: "pulse", label: "PULSE" },
-                  { id: "7d", label: "7D SPRINT" },
-                  { id: "mtd", label: "MTD OPS" },
-                  { id: "fy", label: "FY/FIRE" },
-                ] as const
-              ).map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => setHorizon(h.id)}
-                  className={`px-2 py-0.5 rounded-none font-semibold transition-colors ${
-                    horizon === h.id
-                      ? "bg-[#1e2633] text-cyan-300 border-b-2 border-cyan-400"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {h.label}
-                </button>
-              ))}
-            </div>
-
             <button
               onClick={() => setCurrency((c) => (c === "LKR" ? "USD" : "LKR"))}
               className="px-2 py-0.5 rounded-sm font-mono text-[10px] font-bold bg-[#0d1117] border border-[#1e2633] text-emerald-400 hover:bg-[#161b22] transition-colors"
