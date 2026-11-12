@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Layers,
   RefreshCw,
@@ -38,6 +38,179 @@ import { GridFleetBay } from "@/components/dashboard/GridFleetBay";
 import { TradingBotBay } from "@/components/dashboard/TradingBotBay";
 import { OpsBar } from "@/components/dashboard/OpsBar";
 import { MaturityRadarPanel } from "@/components/dashboard/MaturityRadarPanel";
+
+const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+
+interface EndpointSyncCheck {
+  name: string;
+  timestamp?: string | null;
+  ageMs: number;
+  isSynced: boolean;
+  ageLabel: string;
+}
+
+export interface ZoneSyncStatus {
+  id: string;
+  zoneKey: "zone1" | "zone2" | "zone3" | "zone4" | "zone5" | "zone6";
+  label: string;
+  fullName: string;
+  isSynced: boolean;
+  furthestEndpoint: EndpointSyncCheck;
+  endpoints: EndpointSyncCheck[];
+}
+
+function evaluateEndpoint(name: string, timestamp?: string | null): EndpointSyncCheck {
+  if (!timestamp) {
+    return {
+      name,
+      timestamp: null,
+      ageMs: Infinity,
+      isSynced: false,
+      ageLabel: "No sync record",
+    };
+  }
+
+  const time = new Date(timestamp).getTime();
+  if (isNaN(time)) {
+    return {
+      name,
+      timestamp,
+      ageMs: Infinity,
+      isSynced: false,
+      ageLabel: "Invalid timestamp",
+    };
+  }
+
+  const ageMs = Math.max(0, Date.now() - time);
+  const isSynced = ageMs <= THREE_HOURS_MS;
+
+  const minutes = Math.floor(ageMs / 60000);
+  let ageLabel = "";
+  if (minutes < 1) {
+    ageLabel = "Just now";
+  } else if (minutes < 60) {
+    ageLabel = `${minutes}m ago`;
+  } else {
+    const hours = (ageMs / 3600000).toFixed(1);
+    ageLabel = `${hours}h ago`;
+  }
+
+  return {
+    name,
+    timestamp,
+    ageMs,
+    isSynced,
+    ageLabel,
+  };
+}
+
+function calculateZoneSyncStatus(data: OpsDashboardPayload | null): ZoneSyncStatus[] {
+  if (!data) return [];
+
+  const resolveZone = (
+    id: string,
+    zoneKey: "zone1" | "zone2" | "zone3" | "zone4" | "zone5" | "zone6",
+    label: string,
+    fullName: string,
+    endpoints: EndpointSyncCheck[],
+    extraCondition = true
+  ): ZoneSyncStatus => {
+    let furthest = endpoints[0];
+    for (const ep of endpoints) {
+      if (ep.ageMs > furthest.ageMs) {
+        furthest = ep;
+      }
+    }
+
+    const allEndpointsSynced = endpoints.every((ep) => ep.isSynced);
+    const isSynced = allEndpointsSynced && extraCondition;
+
+    return {
+      id,
+      zoneKey,
+      label,
+      fullName,
+      isSynced,
+      furthestEndpoint: furthest,
+      endpoints,
+    };
+  };
+
+  // ZONE 1: Financial & Equities Bay
+  // Multi-endpoint: Net Worth, Investor Holdings, PAL CSE Stocks
+  const z1 = resolveZone(
+    "z1",
+    "zone1",
+    "Z1: FINANCE",
+    "Zone 1: Financial & Equities Bay",
+    [
+      evaluateEndpoint("LankaWealth Net Worth", data.finance?.lastUpdated),
+      evaluateEndpoint("Investor DB Holdings", data.investments?.lastUpdated),
+      evaluateEndpoint("PAL CSE Stocks", data.finance?.stocks?.lastPalSync),
+    ]
+  );
+
+  // ZONE 2: Spendings & Income Bay
+  const z2 = resolveZone(
+    "z2",
+    "zone2",
+    "Z2: CASH FLOW",
+    "Zone 2: Spendings & Income Bay",
+    [
+      evaluateEndpoint("Expense & Cashflow DB", data.spendIncome?.lastUpdated),
+    ]
+  );
+
+  // ZONE 3: Metabolic & Biometric Bay
+  const z3 = resolveZone(
+    "z3",
+    "zone3",
+    "Z3: BIOMETRIC",
+    "Zone 3: Metabolic & Biometric Bay",
+    [
+      evaluateEndpoint("Calorie & Nutrition DB", data.health?.lastUpdated),
+    ]
+  );
+
+  // ZONE 4: Fleet & Renewable Grid Bay
+  // Multi-endpoint: FusionSolar Solar Inverter, BYD Fleet Pod
+  const z4 = resolveZone(
+    "z4",
+    "zone4",
+    "Z4: GRID & FLEET",
+    "Zone 4: Fleet & Renewable Grid",
+    [
+      evaluateEndpoint("FusionSolar Inverter", data.gridFleet?.solar?.lastSynced),
+      evaluateEndpoint("BYD Vehicle Pod", data.gridFleet?.fleet?.lastSynced),
+    ]
+  );
+
+  // ZONE 5: Algorithmic Trading Bot Bay
+  const botOnline = data.bot?.sourceStatus !== "offline" && data.bot?.isRunning !== false;
+  const z5 = resolveZone(
+    "z5",
+    "zone5",
+    "Z5: TRADING BOT",
+    "Zone 5: Algorithmic Trading Bot",
+    [
+      evaluateEndpoint("AWS EC2 Trading Daemon", data.bot?.lastUpdated),
+    ],
+    botOnline
+  );
+
+  // ZONE 6: Mission Control & Ops Bay
+  const z6 = resolveZone(
+    "z6",
+    "zone6",
+    "Z6: MISSION CTRL",
+    "Zone 6: Mission Control & Ops Bay",
+    [
+      evaluateEndpoint("Ops Mission Telemetry", data.timestamp),
+    ]
+  );
+
+  return [z1, z2, z3, z4, z5, z6];
+}
 
 export default function OperationsDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -144,11 +317,16 @@ export default function OperationsDashboard() {
 
   const { health, spendIncome, finance, investments, bot, gridFleet, sprintTasks, crossDomain } = data;
 
+  // Calculate live zone synchronization telemetry (threshold: 3 hours)
+  const zoneSyncStatuses = useMemo(() => {
+    return calculateZoneSyncStatus(data);
+  }, [data, currentTime]);
+
   return (
     <div className="min-h-screen bg-[#090b0e] text-[#e6edf3] font-sans antialiased selection:bg-cyan-500 selection:text-slate-950 pb-10">
       {/* ── HIGH-DENSITY SYSTEM OPS BAR (TOP) ── */}
       <header className="border-b border-[#161b22] bg-[#06080b] px-3 py-2 sticky top-0 z-40">
-        <div className="max-w-[1720px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+        <div className="max-w-[1720px] mx-auto flex flex-col xl:flex-row items-start xl:items-center justify-between gap-2.5">
           {/* Brand & Telemetry Status */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-slate-100 tracking-wider">
@@ -163,6 +341,54 @@ export default function OperationsDashboard() {
               <span>•</span>
               <span className="text-cyan-400 font-semibold">{currentTime}</span>
             </div>
+          </div>
+
+          {/* ── ZONE SYNC HEALTH TELEMETRY PILLS (Z1 - Z6) ── */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {zoneSyncStatuses.map((z) => (
+              <button
+                key={z.id}
+                onClick={() => handleRefreshZone(z.zoneKey)}
+                disabled={zoneRefreshing[z.zoneKey]}
+                title={`${z.fullName}\nStatus: ${z.isSynced ? "SYNCED (≤3h threshold)" : "OUT OF SYNC (>3h or stale endpoint)"}\nFurthest Source: ${z.furthestEndpoint.name} (${z.furthestEndpoint.ageLabel})\n\nTelemetry Endpoints:\n${z.endpoints.map(e => `• ${e.name}: ${e.ageLabel} [${e.isSynced ? "SYNCED" : "DESYNC"}]`).join("\n")}\n\nClick to selectively refresh ${z.label}`}
+                className={`group relative flex items-center gap-1.5 px-2 py-0.5 rounded-sm border font-mono text-[10px] transition-all cursor-pointer ${
+                  z.isSynced
+                    ? "bg-[#041a12] border-emerald-800/80 text-emerald-300 hover:bg-[#062419] hover:border-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.12)]"
+                    : "bg-[#20080d] border-rose-800/90 text-rose-300 hover:bg-[#2c0b12] hover:border-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.22)]"
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  {zoneRefreshing[z.zoneKey] ? (
+                    <RefreshCw className="h-2 w-2 text-cyan-400 animate-spin" />
+                  ) : z.isSynced ? (
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                  ) : (
+                    <>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500" />
+                    </>
+                  )}
+                </span>
+
+                <span className="font-bold tracking-tight text-slate-200 group-hover:text-white">
+                  {z.label}
+                </span>
+
+                <span
+                  className={`px-1 py-[0.5px] text-[8px] font-black tracking-wider rounded-2xs uppercase ${
+                    z.isSynced
+                      ? "bg-emerald-950 border border-emerald-700/60 text-emerald-300"
+                      : "bg-rose-950 border border-rose-700/80 text-rose-300 animate-pulse"
+                  }`}
+                >
+                  {z.isSynced ? "SYNCED" : "DESYNC"}
+                </span>
+
+                <span className="text-[9px] text-slate-400 group-hover:text-slate-200 hidden 2xl:inline">
+                  {z.furthestEndpoint.ageLabel}
+                </span>
+              </button>
+            ))}
           </div>
 
           {/* Quick Controls & Currency Switcher */}
