@@ -307,6 +307,13 @@ export type GridFleetData = {
     lastSynced?: string;
     syncedFrom?: string;
     stationCode?: string;
+    historyMonth?: Array<{
+      day: number;
+      date: string;
+      generationKwh: number;
+      exportKwh: number;
+      targetKwh: number;
+    }>;
   };
   fleet: {
     vehicleName: string;

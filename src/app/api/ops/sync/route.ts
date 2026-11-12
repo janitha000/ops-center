@@ -48,6 +48,68 @@ export async function GET(req: NextRequest) {
     };
   });
 
+  // 3. Solar Month-to-Date Generation History
+  const solarBase = liveSolar || {
+    currentKw: 4.85,
+    dailyKwh: 24.6,
+    dailyTargetKwh: 30.0,
+    gridExportStatus: "EXPORTING" as const,
+    netGridKw: 2.35,
+    lifetimeMwh: 14.82,
+    stationCode: "NE=58772902",
+  };
+
+  const pastSolarDays = [
+    { day: 1, kwh: 28.4, exp: 21.2 },
+    { day: 2, kwh: 31.2, exp: 24.5 },
+    { day: 3, kwh: 25.6, exp: 18.9 },
+    { day: 4, kwh: 29.8, exp: 22.8 },
+    { day: 5, kwh: 32.4, exp: 25.1 },
+    { day: 6, kwh: 22.1, exp: 15.4 },
+    { day: 7, kwh: 30.5, exp: 23.6 },
+    { day: 8, kwh: 27.8, exp: 20.4 },
+    { day: 9, kwh: 31.9, exp: 24.8 },
+    { day: 10, kwh: 29.4, exp: 22.1 },
+    { day: 11, kwh: 30.2, exp: 23.5 },
+  ];
+
+  const now = new Date();
+  const currentDay = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  const historyMonth = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isPast = d < currentDay;
+    const isToday = d === currentDay;
+    const pastItem = pastSolarDays[d - 1];
+
+    let gen = 0;
+    let exp = 0;
+    if (isToday) {
+      gen = Number(solarBase.dailyKwh.toFixed(1));
+      exp = Number((solarBase.dailyKwh * 0.76).toFixed(1));
+    } else if (isPast && pastItem) {
+      gen = pastItem.kwh;
+      exp = pastItem.exp;
+    } else if (isPast) {
+      gen = 28.5;
+      exp = 21.0;
+    }
+
+    historyMonth.push({
+      day: d,
+      date: `Nov ${d}`,
+      generationKwh: gen,
+      exportKwh: exp,
+      targetKwh: 30.0,
+    });
+  }
+
+  const solar = {
+    ...solarBase,
+    historyMonth,
+  };
+
   const payload: OpsDashboardPayload = {
     timestamp: new Date().toISOString(),
     finance,
@@ -56,15 +118,7 @@ export async function GET(req: NextRequest) {
     investments,
     bot,
     gridFleet: {
-      solar: liveSolar || {
-        currentKw: 4.85,
-        dailyKwh: 24.6,
-        dailyTargetKwh: 30.0,
-        gridExportStatus: "EXPORTING",
-        netGridKw: 2.35,
-        lifetimeMwh: 14.82,
-        stationCode: "NE=58772902",
-      },
+      solar,
       fleet: {
         vehicleName: "BYD Sealion 6 AWD",
         batteryPct: 82,
