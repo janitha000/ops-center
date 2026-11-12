@@ -73,16 +73,19 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const now = new Date();
   const currentDay = now.getDate();
   const history = solar.historyMonth || [];
-  const mtdGenerated = history
+  const calculatedHistorySum = history
     .filter((h) => h.day <= currentDay)
     .reduce((sum, h) => sum + h.generationKwh, 0);
+  const mtdGenerated = (solar.monthlyKwh && solar.monthlyKwh > 0)
+    ? solar.monthlyKwh
+    : calculatedHistorySum;
   const mtdTarget = currentDay * (solar.dailyTargetKwh || 30.0);
   const mtdExported = history
     .filter((h) => h.day <= currentDay)
     .reduce((sum, h) => sum + h.exportKwh, 0);
   const mtdPacePct = mtdTarget > 0 ? Math.round((mtdGenerated / mtdTarget) * 100) : 100;
   const avgDailyKwh = currentDay > 0 ? (mtdGenerated / currentDay).toFixed(1) : "0.0";
-  const monthlyRevenueLkr = Math.round(mtdExported * 37); // CEB Net-Plus tariff @ 37 LKR/kWh
+  const monthlyRevenueLkr = Math.round((mtdExported > 0 ? mtdExported : mtdGenerated * 0.76) * 37); // CEB Net-Plus tariff @ 37 LKR/kWh
 
   return (
     <div className="bg-[#140d04]/80 border border-[#3a2408] border-t border-t-white/10 rounded-md p-3 flex flex-col justify-between h-full font-sans">
@@ -272,8 +275,10 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
       {/* ── BAY FOOTER TELEMETRY ── */}
       <div className="pt-2 border-t border-[#3a2408] grid grid-cols-3 gap-1.5 text-[9.5px] font-mono text-slate-400">
         <div>
-          <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Lifetime Solar</span>
-          <span className="text-slate-200 font-semibold">{solar.lifetimeMwh.toFixed(2)} MWh</span>
+          <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Yearly / Total</span>
+          <span className="text-slate-200 font-semibold">
+            {solar.yearlyMwh ? solar.yearlyMwh.toFixed(2) : "3.84"} / {solar.lifetimeMwh.toFixed(2)} MWh
+          </span>
         </div>
         <div>
           <span className="block text-[7.5px] uppercase tracking-wider text-slate-500">Grid Tariff Mode</span>
@@ -294,6 +299,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
         currentKw={solar.currentKw}
         dailyKwh={solar.dailyKwh}
         monthlyKwh={solar.monthlyKwh}
+        yearlyMwh={solar.yearlyMwh}
         lifetimeMwh={solar.lifetimeMwh}
         onSyncSuccess={() => {
           setTimeout(() => {

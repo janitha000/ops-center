@@ -302,6 +302,7 @@ export type GridFleetData = {
     dailyKwh: number;
     dailyTargetKwh: number;
     monthlyKwh?: number;
+    yearlyMwh?: number;
     gridExportStatus: "EXPORTING" | "IMPORTING" | "NEUTRAL";
     netGridKw: number;
     lifetimeMwh: number;

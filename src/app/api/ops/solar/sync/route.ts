@@ -40,13 +40,38 @@ export async function POST(req: NextRequest) {
       ? body.dailyKwh
       : parseFloat(String(body.dailyKwh || body.dailyYield || body.todayYield || "0").replace(/[^\d\.]/g, "")) || 0;
 
-    const monthlyKwh = typeof body.monthlyKwh === "number"
+    let monthlyKwh = typeof body.monthlyKwh === "number"
       ? body.monthlyKwh
-      : parseFloat(String(body.monthlyKwh || body.monthYield || body.monthlyYield || body.monthEnergy || "0").replace(/[^\d\.]/g, "")) || 0;
+      : parseFloat(String(body.monthlyKwh || body.monthYield || body.monthlyYield || body.monthEnergy || body.month || "0").replace(/[^\d\.]/g, "")) || 0;
+    // Auto-convert if sent in MWh
+    if (body.monthlyMwh || body.monthMwh) {
+      const mMwh = typeof (body.monthlyMwh || body.monthMwh) === "number"
+        ? (body.monthlyMwh || body.monthMwh)
+        : parseFloat(String(body.monthlyMwh || body.monthMwh).replace(/[^\d\.]/g, "")) || 0;
+      if (mMwh > 0) monthlyKwh = mMwh * 1000;
+    } else if (monthlyKwh > 0 && monthlyKwh < 10) {
+      monthlyKwh = monthlyKwh * 1000;
+    }
 
-    const lifetimeMwh = typeof body.lifetimeMwh === "number"
+    let yearlyMwh = typeof body.yearlyMwh === "number"
+      ? body.yearlyMwh
+      : parseFloat(String(body.yearlyMwh || body.yearYield || body.yearlyYield || body.thisYear || body.year || "0").replace(/[^\d\.]/g, "")) || 0;
+    if (body.yearlyKwh || body.yearKwh || yearlyMwh > 50) {
+      const yKwh = body.yearlyKwh || body.yearKwh || yearlyMwh;
+      const num = typeof yKwh === "number" ? yKwh : parseFloat(String(yKwh).replace(/[^\d\.]/g, "")) || 0;
+      yearlyMwh = num > 50 ? num / 1000 : num;
+    }
+    if (yearlyMwh <= 0) yearlyMwh = 3.84;
+
+    let lifetimeMwh = typeof body.lifetimeMwh === "number"
       ? body.lifetimeMwh
-      : parseFloat(String(body.lifetimeMwh || body.totalYield || body.totalPower || "0").replace(/[^\d\.]/g, "")) || 3.84;
+      : parseFloat(String(body.lifetimeMwh || body.totalYield || body.totalPower || body.total || "0").replace(/[^\d\.]/g, "")) || 0;
+    if (body.lifetimeKwh || body.totalKwh || lifetimeMwh > 100) {
+      const totKwh = body.lifetimeKwh || body.totalKwh || lifetimeMwh;
+      const num = typeof totKwh === "number" ? totKwh : parseFloat(String(totKwh).replace(/[^\d\.]/g, "")) || 0;
+      lifetimeMwh = num > 100 ? num / 1000 : num;
+    }
+    if (lifetimeMwh <= 0) lifetimeMwh = yearlyMwh || 3.84;
 
     const netGridKw = typeof body.netGridKw === "number"
       ? body.netGridKw
@@ -74,6 +99,7 @@ export async function POST(req: NextRequest) {
       dailyKwh: Number(dailyKwh.toFixed(2)),
       dailyTargetKwh,
       monthlyKwh: monthlyKwh > 0 ? Number(monthlyKwh.toFixed(1)) : undefined,
+      yearlyMwh: yearlyMwh > 0 ? Number(yearlyMwh.toFixed(2)) : 3.84,
       gridExportStatus,
       netGridKw: Number(netGridKw.toFixed(2)),
       lifetimeMwh: Number(lifetimeMwh.toFixed(2)),

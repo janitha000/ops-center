@@ -11,6 +11,7 @@ interface SolarSyncModalProps {
   currentKw?: number;
   dailyKwh?: number;
   monthlyKwh?: number;
+  yearlyMwh?: number;
   lifetimeMwh?: number;
   onSyncSuccess?: () => void;
 }
@@ -23,6 +24,7 @@ export function SolarSyncModal({
   currentKw = 0,
   dailyKwh = 0,
   monthlyKwh = 0,
+  yearlyMwh = 3.84,
   lifetimeMwh = 3.84,
   onSyncSuccess,
 }: SolarSyncModalProps) {
@@ -34,14 +36,16 @@ export function SolarSyncModal({
   const [formCurrentKw, setFormCurrentKw] = useState(String(currentKw));
   const [formDailyKwh, setFormDailyKwh] = useState(String(dailyKwh));
   const [formMonthlyKwh, setFormMonthlyKwh] = useState(String(monthlyKwh || ""));
+  const [formYearlyMwh, setFormYearlyMwh] = useState(String(yearlyMwh || "3.84"));
   const [formLifetimeMwh, setFormLifetimeMwh] = useState(String(lifetimeMwh));
 
   useEffect(() => {
     setFormCurrentKw(String(currentKw));
     setFormDailyKwh(String(dailyKwh));
     if (monthlyKwh) setFormMonthlyKwh(String(monthlyKwh));
+    if (yearlyMwh) setFormYearlyMwh(String(yearlyMwh));
     setFormLifetimeMwh(String(lifetimeMwh));
-  }, [currentKw, dailyKwh, monthlyKwh, lifetimeMwh, isOpen]);
+  }, [currentKw, dailyKwh, monthlyKwh, yearlyMwh, lifetimeMwh, isOpen]);
 
   if (!isOpen) return null;
 
@@ -50,7 +54,7 @@ export function SolarSyncModal({
     : "https://ops-center-psi.vercel.app";
 
   // Minified, highly resilient bookmarklet script designed for intl.fusionsolar.huawei.com
-  const bookmarkletCode = `javascript:(async()=>{try{let curKw=0,dayKwh=0,monthKwh=0,totMwh=0,gridKw=0;const txt=document.body.innerText||'';const cleanNum=s=>{const m=String(s||'').match(/([\\d]+(?:\\.[\\d]+)?)/);return m?parseFloat(m[1]):0;};const allEls=Array.from(document.querySelectorAll('div,span,p,td,strong,h1,h2,h3,h4'));const findMetric=(labels,unitRegex)=>{for(const l of labels){for(let i=0;i<allEls.length;i++){const el=allEls[i];const t=(el.innerText||'').trim();if(t.toLowerCase().includes(l.toLowerCase())&&t.length<40){const p=el.parentElement;if(p){const pt=p.innerText||'';const m=pt.match(unitRegex);if(m)return cleanNum(m[0]);}for(let j=1;j<=3;j++){const s=allEls[i+j];if(s){const st=s.innerText||'';const sm=st.match(unitRegex);if(sm)return cleanNum(sm[0]);}}}}}return 0;};curKw=findMetric(['Inverter power','Current power','PV power','Active power','Power'],/([\\d]+(?:\\.[\\d]+)?)\\s*kW/i);if(!curKw){const kwM=txt.match(/([\\d]+(?:\\.[\\d]+)?)\\s*kW/i);if(kwM)curKw=cleanNum(kwM[0]);}dayKwh=findMetric(['Yield today','Daily yield','Today energy','Daily energy','Generation today'],/([\\d]+(?:\\.[\\d]+)?)\\s*kWh/i);if(!dayKwh){const kwhM=txt.match(/([\\d]+(?:\\.[\\d]+)?)\\s*kWh/i);if(kwhM)dayKwh=cleanNum(kwhM[0]);}monthKwh=findMetric(['Yield this month','Monthly yield','Month yield','This month energy','Month energy'],/([\\d]+(?:\\.[\\d]+)?)\\s*kWh/i);totMwh=findMetric(['Total yield','Lifetime yield','Accumulated yield'],/([\\d]+(?:\\.[\\d]+)?)\\s*MWh/i);if(!totMwh){const mwhM=txt.match(/([\\d]+(?:\\.[\\d]+)?)\\s*MWh/i);if(mwhM)totMwh=cleanNum(mwhM[0]);else{const kwhTot=findMetric(['Total yield'],/([\\d]+(?:\\.[\\d]+)?)\\s*kWh/i);if(kwhTot)totMwh=Number((kwhTot/1000).toFixed(2));}}gridKw=findMetric(['Feed-in power','Feed-in','Export','Grid power'],/([\\d]+(?:\\.[\\d]+)?)\\s*kW/i);if(!gridKw&&curKw>0)gridKw=Number((curKw*0.75).toFixed(2));let chartPoints=[];try{const ecEls=document.querySelectorAll('[_echarts_instance_]');for(const el of ecEls){if(window.echarts){const inst=window.echarts.getInstanceByDom(el);if(inst){const opt=inst.getOption();if(opt&&opt.series){for(const s of opt.series){if(Array.isArray(s.data)&&s.data.length>=5){chartPoints=s.data.map((v,i)=>({day:i+1,date:'Nov '+(i+1),generationKwh:typeof v==='object'&&v!==null?Number(v.value)||0:Number(v)||0,exportKwh:Number(((typeof v==='object'&&v!==null?Number(v.value)||0:Number(v)||0)*0.76).toFixed(1)),targetKwh:30}));break;}}}}}}}catch(e){}const payload={currentKw:curKw,dailyKwh:dayKwh,monthlyKwh:monthKwh||undefined,lifetimeMwh:totMwh||3.84,netGridKw:gridKw,dailyTargetKwh:30.0,gridExportStatus:curKw>0.05?'EXPORTING':'NEUTRAL',stationCode:'NE=58772902',timestamp:new Date().toISOString(),historyMonth:chartPoints.length?chartPoints:undefined};let synced=false;const endpoints=['${appOrigin}/api/ops/solar/sync','https://ops-center-psi.vercel.app/api/ops/solar/sync','http://localhost:3000/api/ops/solar/sync'];for(const url of endpoints){try{const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),mode:'cors'});if(res.ok){synced=true;alert(\`✅ Life Ops Synced!\\n• Current: \${payload.currentKw} kW\\n• Today: \${payload.dailyKwh} kWh\\n• Month: \${payload.monthlyKwh||'auto'} kWh\\n• Total: \${payload.lifetimeMwh} MWh\`);break;}}catch(e){}}if(!synced){await navigator.clipboard.writeText(JSON.stringify(payload,null,2));alert(\`📋 Solar Telemetry Copied to Clipboard!\\n• Current: \${payload.currentKw} kW\\n• Today: \${payload.dailyKwh} kWh\\n• Total: \${payload.lifetimeMwh} MWh\\n\\nOpen LifeOps and paste into Solar Sync modal.\`);}}catch(err){alert('❌ FusionSolar Extraction Error: '+err.message);}})();`;
+  const bookmarkletCode = `javascript:(async()=>{try{let curKw=0,dayKwh=0,monthKwh=0,yearMwh=0,totMwh=0,gridKw=0;const txt=document.body.innerText||'';const allEls=Array.from(document.querySelectorAll('div,span,p,td,strong,h1,h2,h3,h4,label,a'));const findMetric=(labels)=>{for(const l of labels){const lLow=l.toLowerCase();for(let i=0;i<allEls.length;i++){const el=allEls[i];const t=(el.innerText||'').trim();if(t.toLowerCase()===lLow||(t.toLowerCase().startsWith(lLow)&&t.length<=l.length+6)){const p=el.parentElement;if(p){const pt=(p.innerText||'').trim();const reg=new RegExp('(?:^|[\\\\s\\\\n])'+l+'[:\\\\s\\\\n]+([\\\\d]+(?:\\\\.[\\\\d]+)?)[\\\\s\\\\n]*(kWh|MWh|kW|W)?','i');const m=pt.match(reg);if(m){return{val:parseFloat(m[1]),unit:(m[2]||'').toLowerCase()};}}let next=el.nextElementSibling;for(let k=0;k<3&&next;k++){const nt=(next.innerText||'').trim();const nm=nt.match(/([\\\\d]+(?:\\\\.[\\\\d]+)?)/);if(nm){const um=nt.match(/(kWh|MWh|kW|W)/i)||(next.nextElementSibling?(next.nextElementSibling.innerText||'').match(/(kWh|MWh|kW|W)/i):null);return{val:parseFloat(nm[1]),unit:um?um[1].toLowerCase():''};}next=next.nextElementSibling;}}}}for(const l of labels){const reg=new RegExp('(?:^|[\\\\s\\\\n])'+l+'[:\\\\s\\\\n]+([\\\\d]+(?:\\\\.[\\\\d]+)?)[\\\\s\\\\n]*(kWh|MWh|kW|W)?','i');const m=txt.match(reg);if(m){return{val:parseFloat(m[1]),unit:(m[2]||'').toLowerCase()};}}return null;};const c=findMetric(['Inverter power','Current power','PV power','Active power','Power','Real-time power']);if(c){curKw=c.unit==='w'?c.val/1000:c.val;}const d=findMetric(['Today','Yield today','Daily yield','Generation today','Today energy']);if(d){dayKwh=d.unit==='mwh'?d.val*1000:d.val;}const m=findMetric(['Month','Yield this month','Monthly yield','Month yield','This month energy','Month energy','This month','Current month']);if(m){monthKwh=m.unit==='mwh'||m.val<10?m.val*1000:m.val;}const y=findMetric(['Year','Yield this year','Yearly yield','This year energy','This year','Year yield','Current year']);if(y){yearMwh=y.unit==='kwh'||y.val>50?Number((y.val/1000).toFixed(2)):y.val;}const t=findMetric(['Total','Total yield','Lifetime yield','Accumulated yield','Cumulative yield','Total energy','Lifetime']);if(t){totMwh=t.unit==='kwh'||t.val>50?Number((t.val/1000).toFixed(2)):t.val;}const g=findMetric(['Feed-in power','Feed-in','Export','Grid power']);if(g){gridKw=g.unit==='w'?g.val/1000:g.val;}else if(curKw>0){gridKw=Number((curKw*0.75).toFixed(2));}let chartPoints=[];try{const ecEls=document.querySelectorAll('[_echarts_instance_]');for(const el of ecEls){if(window.echarts){const inst=window.echarts.getInstanceByDom(el);if(inst){const opt=inst.getOption();if(opt&&opt.series){for(const s of opt.series){if(Array.isArray(s.data)&&s.data.length>=5){chartPoints=s.data.map((v,i)=>({day:i+1,date:'Nov '+(i+1),generationKwh:typeof v==='object'&&v!==null?Number(v.value)||0:Number(v)||0,exportKwh:Number(((typeof v==='object'&&v!==null?Number(v.value)||0:Number(v)||0)*0.76).toFixed(1)),targetKwh:30}));break;}}}}}}}catch(e){}const payload={currentKw:Number(curKw.toFixed(2)),dailyKwh:Number(dayKwh.toFixed(2)),monthlyKwh:monthKwh>0?Number(monthKwh.toFixed(1)):undefined,yearlyMwh:yearMwh>0?Number(yearMwh.toFixed(2)):3.84,lifetimeMwh:totMwh>0?Number(totMwh.toFixed(2)):(yearMwh||3.84),netGridKw:Number(gridKw.toFixed(2)),dailyTargetKwh:30.0,gridExportStatus:curKw>0.05?'EXPORTING':'NEUTRAL',stationCode:'NE=58772902',timestamp:new Date().toISOString(),historyMonth:chartPoints.length?chartPoints:undefined};let synced=false;const endpoints=['${appOrigin}/api/ops/solar/sync','https://ops-center-psi.vercel.app/api/ops/solar/sync','http://localhost:3000/api/ops/solar/sync'];for(const url of endpoints){try{const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),mode:'cors'});if(res.ok){synced=true;alert(\`✅ Life Ops Synced!\\\\n• Current: \${payload.currentKw} kW\\\\n• Today: \${payload.dailyKwh} kWh\\\\n• Month: \${payload.monthlyKwh||'auto'} kWh\\\\n• Year: \${payload.yearlyMwh} MWh\\\\n• Total: \${payload.lifetimeMwh} MWh\`);break;}}catch(e){}}if(!synced){await navigator.clipboard.writeText(JSON.stringify(payload,null,2));alert(\`📋 Solar Telemetry Copied!\\\\n• Current: \${payload.currentKw} kW\\\\n• Today: \${payload.dailyKwh} kWh\\\\n• Month: \${payload.monthlyKwh||'auto'} kWh\\\\n• Year: \${payload.yearlyMwh} MWh\`);}}catch(err){alert('❌ FusionSolar Extraction Error: '+err.message);}})();`;
 
   const handleCopyBookmarklet = async () => {
     try {
@@ -71,6 +75,7 @@ export function SolarSyncModal({
       currentKw: parseFloat(formCurrentKw) || 0,
       dailyKwh: parseFloat(formDailyKwh) || 0,
       monthlyKwh: formMonthlyKwh ? parseFloat(formMonthlyKwh) : undefined,
+      yearlyMwh: parseFloat(formYearlyMwh) || 3.84,
       lifetimeMwh: parseFloat(formLifetimeMwh) || 3.84,
       netGridKw: (parseFloat(formCurrentKw) || 0) * 0.75,
       dailyTargetKwh: 30.0,
@@ -94,7 +99,7 @@ export function SolarSyncModal({
 
       setStatusMessage({
         type: "success",
-        text: `Successfully updated Solar Telemetry: ${payload.currentKw} kW, ${payload.dailyKwh} kWh today, ${payload.monthlyKwh ?? "auto"} kWh month!`,
+        text: `Successfully updated Solar Telemetry: ${payload.currentKw} kW, ${payload.dailyKwh} kWh today, ${payload.monthlyKwh ?? "auto"} kWh month, ${payload.yearlyMwh} MWh year!`,
       });
       if (onSyncSuccess) onSyncSuccess();
     } catch (err: any) {
@@ -124,20 +129,26 @@ export function SolarSyncModal({
         </div>
 
         {/* Live Status Readout */}
-        <div className="my-3 p-2.5 rounded bg-[#170e05] border border-[#3a2408] flex items-center justify-between text-xs font-mono">
-          <div>
+        <div className="my-3 p-2.5 rounded bg-[#170e05] border border-[#3a2408] grid grid-cols-4 gap-2 text-xs font-mono text-center">
+          <div className="text-left">
             <span className="text-[10px] text-slate-400 block uppercase font-semibold">Station ID</span>
             <span className="text-amber-300 font-bold">NE=58772902</span>
           </div>
-          <div className="text-center">
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">Live Yield</span>
+          <div>
+            <span className="text-[10px] text-slate-400 block uppercase font-semibold">Today / Live</span>
             <span className="text-slate-200 font-bold">
-              {currentKw} kW / {dailyKwh} kWh today
+              {currentKw} kW / {dailyKwh} kWh
+            </span>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 block uppercase font-semibold">Month MTD</span>
+            <span className="text-emerald-400 font-bold">
+              {monthlyKwh ? `${monthlyKwh} kWh` : "auto"}
             </span>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-slate-400 block uppercase font-semibold">Lifetime</span>
-            <span className="text-amber-400 font-bold">{lifetimeMwh} MWh</span>
+            <span className="text-[10px] text-slate-400 block uppercase font-semibold">Year / Total</span>
+            <span className="text-amber-400 font-bold">{yearlyMwh || 3.84} / {lifetimeMwh} MWh</span>
           </div>
         </div>
 
@@ -185,7 +196,7 @@ export function SolarSyncModal({
               <span>DIRECT TELEMETRY VALUES (CALIBRATE / VERIFY)</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono mb-2.5">
+            <div className="grid grid-cols-3 gap-2 text-[10px] font-mono mb-2.5">
               <div>
                 <label className="text-slate-400 block mb-0.5">CURRENT POWER (kW)</label>
                 <input
@@ -194,7 +205,7 @@ export function SolarSyncModal({
                   value={formCurrentKw}
                   onChange={(e) => setFormCurrentKw(e.target.value)}
                   className="w-full bg-[#080402] border border-[#3a2408] rounded px-2 py-1 text-amber-300 focus:outline-none focus:border-amber-500 font-bold"
-                  placeholder="e.g. 4.85"
+                  placeholder="e.g. 0.00"
                 />
               </div>
 
@@ -206,7 +217,7 @@ export function SolarSyncModal({
                   value={formDailyKwh}
                   onChange={(e) => setFormDailyKwh(e.target.value)}
                   className="w-full bg-[#080402] border border-[#3a2408] rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-amber-500 font-bold"
-                  placeholder="e.g. 24.5"
+                  placeholder="e.g. 0.01"
                 />
               </div>
 
@@ -217,13 +228,25 @@ export function SolarSyncModal({
                   step="0.1"
                   value={formMonthlyKwh}
                   onChange={(e) => setFormMonthlyKwh(e.target.value)}
-                  className="w-full bg-[#080402] border border-[#3a2408] rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-amber-500 font-bold"
-                  placeholder="e.g. 245.0"
+                  className="w-full bg-[#080402] border border-[#3a2408] rounded px-2 py-1 text-emerald-400 focus:outline-none focus:border-amber-500 font-bold"
+                  placeholder="e.g. 185.0"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-0.5">LIFETIME YIELD (MWh)</label>
+                <label className="text-slate-400 block mb-0.5">YEAR'S YIELD (MWh)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formYearlyMwh}
+                  onChange={(e) => setFormYearlyMwh(e.target.value)}
+                  className="w-full bg-[#080402] border border-[#3a2408] rounded px-2 py-1 text-amber-300 focus:outline-none focus:border-amber-500 font-bold"
+                  placeholder="e.g. 3.84"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-0.5">TOTAL / LIFETIME (MWh)</label>
                 <input
                   type="number"
                   step="0.01"

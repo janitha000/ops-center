@@ -53,24 +53,26 @@ export async function GET(req: NextRequest) {
     currentKw: 4.85,
     dailyKwh: 24.6,
     dailyTargetKwh: 30.0,
+    yearlyMwh: 3.84,
+    monthlyKwh: 145.0,
     gridExportStatus: "EXPORTING" as const,
     netGridKw: 2.35,
-    lifetimeMwh: 14.82,
+    lifetimeMwh: 3.84,
     stationCode: "NE=58772902",
   };
 
   const pastSolarDays = [
-    { day: 1, kwh: 28.4, exp: 21.2 },
-    { day: 2, kwh: 31.2, exp: 24.5 },
-    { day: 3, kwh: 25.6, exp: 18.9 },
-    { day: 4, kwh: 29.8, exp: 22.8 },
-    { day: 5, kwh: 32.4, exp: 25.1 },
-    { day: 6, kwh: 22.1, exp: 15.4 },
-    { day: 7, kwh: 30.5, exp: 23.6 },
-    { day: 8, kwh: 27.8, exp: 20.4 },
-    { day: 9, kwh: 31.9, exp: 24.8 },
-    { day: 10, kwh: 29.4, exp: 22.1 },
-    { day: 11, kwh: 30.2, exp: 23.5 },
+    { day: 1, kwh: 12.4, exp: 9.2 },
+    { day: 2, kwh: 14.2, exp: 10.5 },
+    { day: 3, kwh: 11.6, exp: 8.9 },
+    { day: 4, kwh: 13.8, exp: 10.8 },
+    { day: 5, kwh: 15.4, exp: 11.1 },
+    { day: 6, kwh: 10.1, exp: 7.4 },
+    { day: 7, kwh: 14.5, exp: 10.6 },
+    { day: 8, kwh: 12.8, exp: 9.4 },
+    { day: 9, kwh: 13.9, exp: 10.8 },
+    { day: 10, kwh: 12.4, exp: 9.1 },
+    { day: 11, kwh: 13.2, exp: 9.5 },
   ];
 
   const now = new Date();
@@ -115,6 +117,8 @@ export async function GET(req: NextRequest) {
 
   const solar = {
     ...solarBase,
+    yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.84,
+    monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh,
     historyMonth,
   };
 
