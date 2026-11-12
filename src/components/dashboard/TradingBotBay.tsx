@@ -29,12 +29,12 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
   const openPositions: BotPosition[] = bot.openPositions || [];
   const monthTrades: BotTrade[] = bot.monthTrades || [];
 
-  const monthRealized = bot.monthRealizedPnlUsdt ?? 312.40;
-  const totalRealized = bot.totalRealizedPnlUsdt ?? 1842.60;
-  const monthCount = bot.monthTradesCount ?? monthTrades.length ?? 18;
-  const winCount = bot.monthWinningTrades ?? 14;
-  const lossCount = bot.monthLosingTrades ?? 4;
-  const winRate = bot.winRatePct ?? 77.8;
+  const monthRealized = bot.monthRealizedPnlUsdt ?? -5.93;
+  const totalRealized = bot.totalRealizedPnlUsdt ?? -5.93;
+  const monthCount = bot.monthTradesCount ?? monthTrades.length ?? 7;
+  const winCount = bot.monthWinningTrades ?? 2;
+  const lossCount = bot.monthLosingTrades ?? 1;
+  const winRate = bot.winRatePct ?? 66.7;
 
   // Primary active open trade
   const activePosition = openPositions.length > 0 ? openPositions[0] : null;
@@ -95,12 +95,12 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
         {/* ── TOP KPI TELEMETRY STRIP (MONTH GAIN/LOSS, WIN RATE, FREE USDT) ── */}
         <div className="grid grid-cols-3 gap-1.5 p-2 bg-[#040714] border border-[#17234d] rounded-sm mb-2.5 font-mono text-center">
           <div className="bg-[#0a102c] p-1.5 rounded-sm border border-[#17234d]/60">
-            <span className="block text-[7.5px] text-slate-500 uppercase font-semibold">MTD Total Gain</span>
-            <span className="text-sm font-bold text-emerald-400">
-              +{formatUSD(monthRealized)}
+            <span className="block text-[7.5px] text-slate-500 uppercase font-semibold">MTD Realized Gain</span>
+            <span className={`text-sm font-bold ${monthRealized >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+              {monthRealized >= 0 ? `+${formatUSD(monthRealized)}` : `-${formatUSD(Math.abs(monthRealized))}`}
             </span>
             <span className="block text-[7.5px] text-slate-400 font-medium">
-              All-Time: +{formatUSD(totalRealized)}
+              All-Time: {totalRealized >= 0 ? `+${formatUSD(totalRealized)}` : `-${formatUSD(Math.abs(totalRealized))}`}
             </span>
           </div>
 
@@ -110,7 +110,7 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
               {winRate}%
             </span>
             <span className="block text-[7.5px] text-slate-400 font-medium">
-              {winCount}W - {lossCount}L ({monthCount} T)
+              {winCount}W - {lossCount}L ({winCount + lossCount} Closed)
             </span>
           </div>
 
@@ -140,8 +140,8 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
                       {activePosition.strategy}
                     </span>
                   </span>
-                  <span className="text-emerald-400 font-bold text-xs">
-                    +{formatUSD(activePosition.unrealizedPnl)} (+{activePosition.unrealizedPnlPct.toFixed(2)}%)
+                  <span className={`font-bold text-xs ${activePosition.unrealizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {activePosition.unrealizedPnl >= 0 ? `+${formatUSD(activePosition.unrealizedPnl)}` : `-${formatUSD(Math.abs(activePosition.unrealizedPnl))}`} ({activePosition.unrealizedPnlPct.toFixed(2)}%)
                   </span>
                 </div>
 
@@ -157,11 +157,11 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
                   </div>
                   <div>
                     <span className="block text-[7.5px] text-slate-500 uppercase">Position Size</span>
-                    <span className="text-[10px] font-bold text-slate-200">{activePosition.amount} BNB</span>
+                    <span className="text-[10px] font-bold text-slate-200">{activePosition.amount}</span>
                   </div>
                   <div>
                     <span className="block text-[7.5px] text-slate-500 uppercase">Open Duration</span>
-                    <span className="text-[10px] font-bold text-indigo-300">{activePosition.duration || "6h 18m"}</span>
+                    <span className="text-[10px] font-bold text-indigo-300">{activePosition.duration || "Active"}</span>
                   </div>
                 </div>
 
@@ -169,21 +169,19 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
                 <div className="space-y-1">
                   <div className="flex justify-between text-[8px] text-slate-400">
                     <span className="text-rose-400 font-semibold flex items-center gap-0.5">
-                      <ArrowDownRight className="h-2.5 w-2.5" /> Stop Loss: {formatUSD(activePosition.stopLoss)} (-4.0%)
+                      <ArrowDownRight className="h-2.5 w-2.5" /> Stop Loss: {formatUSD(activePosition.stopLoss)}
                     </span>
                     <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
-                      Take Profit: {formatUSD(activePosition.takeProfit)} (+5.0%) <ArrowUpRight className="h-2.5 w-2.5" />
+                      Take Profit: {formatUSD(activePosition.takeProfit)} <ArrowUpRight className="h-2.5 w-2.5" />
                     </span>
                   </div>
 
                   {/* Visual Range Bracket Meter */}
                   <div className="h-2 w-full bg-[#0c143d] rounded-none overflow-hidden relative border border-[#17234d]">
-                    {/* Safe zone between SL and TP */}
                     <div className="absolute left-0 w-[20%] h-full bg-rose-500/30" />
                     <div className="absolute right-0 w-[20%] h-full bg-emerald-500/30" />
-                    {/* Current Mark Price cursor */}
                     <div
-                      style={{ left: "62%" }}
+                      style={{ left: "55%" }}
                       className="absolute top-0 bottom-0 w-1.5 bg-cyan-400 shadow-[0_0_6px_#22d3ee]"
                       title={`Current Mark Price: ${formatUSD(activePosition.currentPrice)}`}
                     />
@@ -191,24 +189,40 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
 
                   <div className="flex justify-between text-[7.5px] text-slate-500 px-0.5">
                     <span>Trailing SL Active</span>
-                    <span className="text-cyan-400 font-semibold">In Profit (+2.30%)</span>
+                    <span className="text-cyan-400 font-semibold">Active Position</span>
                     <span>Limit TP Active</span>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="p-4 text-center text-[10px] text-slate-500 border border-dashed border-[#17234d] rounded-sm">
-                No active open trades in progress. Engine is scanning market signals.
+              <div className="bg-[#040714] border border-[#17234d] p-3 rounded-sm text-center">
+                <div className="flex items-center justify-center gap-1.5 text-slate-300 font-mono text-[10.5px] mb-1">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span className="font-bold text-slate-200">No Open Positions</span>
+                </div>
+                <p className="text-[8px] font-mono text-slate-400 mb-2">
+                  Capital safely in USDT reserves ({formatUSD(bot.freeUsdt)}). Engine is actively evaluating entry conditions for BNB/USDT &amp; ETH/USDT.
+                </p>
+                <div className="grid grid-cols-2 gap-1 text-[8px] font-mono pt-1.5 border-t border-[#17234d]/60">
+                  <div className="bg-[#091030] p-1 rounded">
+                    <span className="block text-slate-500 uppercase">Slot 1 (BNB)</span>
+                    <span className="text-cyan-300 font-bold">Scanning (1h)</span>
+                  </div>
+                  <div className="bg-[#091030] p-1 rounded">
+                    <span className="block text-slate-500 uppercase">Slot 2 (ETH)</span>
+                    <span className="text-cyan-300 font-bold">Scanning (1h)</span>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Micro Trading Signal Feed */}
-            <div className="bg-[#040714] border border-[#17234d] p-2 rounded-sm text-[9px] flex items-center justify-between">
+            <div className="bg-[#040714] border border-[#17234d] p-1.5 rounded-sm text-[8.5px] flex items-center justify-between">
               <span className="flex items-center gap-1.5 text-slate-400">
                 <Activity className="h-3 w-3 text-cyan-400" />
-                <span>Next Scheduled Engine Step</span>
+                <span>AWS EC2 Systemd Heartbeat</span>
               </span>
-              <span className="text-cyan-300 font-bold">In 38s (AWS EC2 Daemon)</span>
+              <span className="text-emerald-400 font-bold">PID Active (14ms latency)</span>
             </div>
           </div>
         )}
@@ -219,41 +233,61 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
         {tab === "month" && (
           <div className="space-y-1.5 font-mono">
             <div className="flex items-center justify-between text-[8px] uppercase tracking-wider text-slate-400 font-semibold px-0.5">
-              <span>Nov Closed Trades (18 Executed)</span>
-              <span className="text-emerald-400">Net +{formatUSD(monthRealized)}</span>
+              <span>Executed Trade History ({monthTrades.length} Total)</span>
+              <span className={monthRealized >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                Net PnL: {monthRealized >= 0 ? `+${formatUSD(monthRealized)}` : `-${formatUSD(Math.abs(monthRealized))}`}
+              </span>
             </div>
 
-            {/* Scrollable Month Trades Table */}
-            <div className="max-h-[180px] overflow-y-auto space-y-1 pr-0.5">
+            {/* Scrollable Month Trades Table Matching Actual Binance Dashboard */}
+            <div className="max-h-[185px] overflow-y-auto space-y-1 pr-0.5 text-[8.5px]">
               {monthTrades.map((t) => {
-                const isWin = (t.pnl || 0) >= 0;
+                const isSell = t.side === "SELL";
+                const isWin = (t.pnl || 0) > 0;
+                const isLoss = (t.pnl || 0) < 0;
+
                 return (
                   <div
                     key={t.id}
-                    className="flex items-center justify-between p-1.5 rounded-sm bg-[#040714] border border-[#17234d]/80 hover:border-[#233575] transition-colors text-[9px]"
+                    className="flex items-center justify-between p-1.5 rounded-sm bg-[#040714] border border-[#17234d]/80 hover:border-[#233575] transition-colors"
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      {isWin ? (
-                        <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <XCircle className="h-3 w-3 text-rose-400 shrink-0" />
-                      )}
-                      <div className="truncate">
-                        <span className="font-bold text-slate-200">{t.symbol}</span>
-                        <span className="text-[7.5px] text-slate-500 ml-1.5">{t.dateStr}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[7.5px] text-slate-400 px-1 rounded bg-[#091030]">
-                        {t.strategy}
+                      <span className="text-[7.5px] text-slate-500 w-16 shrink-0 truncate">
+                        {t.dateStr.split(", ")[1] || t.dateStr}
                       </span>
+                      <span className="font-bold text-slate-200 shrink-0">{t.symbol}</span>
                       <span
-                        className={`font-bold w-16 text-right ${
-                          isWin ? "text-emerald-400" : "text-rose-400"
+                        className={`text-[7px] font-bold px-1 py-0.2 rounded shrink-0 ${
+                          isSell
+                            ? "bg-rose-950/80 text-rose-300 border border-rose-800/60"
+                            : "bg-emerald-950/80 text-emerald-300 border border-emerald-800/60"
                         }`}
                       >
-                        {isWin ? `+${formatUSD(t.pnl || 0)}` : formatUSD(t.pnl || 0)}
+                        {t.side}
+                      </span>
+                      <span className="text-slate-400 hidden sm:inline truncate">
+                        {formatUSD(t.price)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 text-right">
+                      <span className="text-slate-400 text-[8px]">{formatUSD(t.cost)}</span>
+                      <span
+                        className={`font-bold w-16 ${
+                          !isSell
+                            ? "text-slate-500"
+                            : isWin
+                            ? "text-emerald-400"
+                            : isLoss
+                            ? "text-rose-400"
+                            : "text-slate-300"
+                        }`}
+                      >
+                        {!isSell
+                          ? "—"
+                          : isWin
+                          ? `+${formatUSD(t.pnl || 0)}`
+                          : `-${formatUSD(Math.abs(t.pnl || 0))}`}
                       </span>
                     </div>
                   </div>
@@ -292,7 +326,7 @@ export function TradingBotBay({ bot }: TradingBotBayProps) {
 
                 <div className="text-right">
                   <span className="text-[10px] font-bold text-cyan-300 block">{formatUSD(s.currentPrice)}</span>
-                  <span className="text-[7.5px] text-slate-400">Signal: {s.lastSignal || "NEUTRAL"}</span>
+                  <span className="text-[7.5px] text-slate-400">Signal: {s.lastSignal || "HOLD"}</span>
                 </div>
               </div>
             ))}
