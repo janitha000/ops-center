@@ -304,6 +304,9 @@ export type GridFleetData = {
     gridExportStatus: "EXPORTING" | "IMPORTING" | "NEUTRAL";
     netGridKw: number;
     lifetimeMwh: number;
+    lastSynced?: string;
+    syncedFrom?: string;
+    stationCode?: string;
   };
   fleet: {
     vehicleName: string;

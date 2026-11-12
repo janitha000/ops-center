@@ -3,16 +3,34 @@
 import React, { useState } from "react";
 import { Sun, Zap, BatteryCharging, Power } from "lucide-react";
 import { GridFleetData } from "@/lib/types";
+import { SolarSyncModal } from "./SolarSyncModal";
 
 interface GridFleetBayProps {
   gridFleet: GridFleetData;
 }
 
+function formatRelativeTime(dateString?: string): string {
+  if (!dateString) return "";
+  const now = Date.now();
+  const past = new Date(dateString).getTime();
+  if (isNaN(past)) return "";
+  const diffSec = Math.max(0, Math.floor((now - past) / 1000));
+  if (diffSec < 45) return "just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
+}
+
 export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const { solar, fleet } = gridFleet;
   const [chargingOverride, setChargingOverride] = useState(fleet.isCharging);
+  const [isSolarSyncOpen, setIsSolarSyncOpen] = useState(false);
 
   const solarTargetPct = Math.min(100, Math.round((solar.dailyKwh / solar.dailyTargetKwh) * 100));
+  const syncTimeStr = formatRelativeTime(solar.lastSynced);
 
   // Segmented battery meter (10 segments)
   const segments = 10;
@@ -31,8 +49,20 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
             </h2>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40">
+          <div className="flex items-center gap-1.5 font-mono text-[9px]">
+            <button
+              onClick={() => setIsSolarSyncOpen(true)}
+              className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-colors border flex items-center gap-1 ${
+                solar.syncedFrom === "fusionsolar"
+                  ? "bg-[#251705] border-amber-600/50 text-amber-300"
+                  : "bg-[#180f04] hover:bg-[#251705] border-[#3a2408] text-slate-300 hover:text-amber-300"
+              }`}
+              title="Sync live solar generation from FusionSolar"
+            >
+              <span>{solar.syncedFrom === "fusionsolar" ? "● SOLAR SYNCED" : "⇄ SOLAR SYNC"}</span>
+              {syncTimeStr && <span className="text-[7.5px] text-slate-500 lowercase">({syncTimeStr})</span>}
+            </button>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40">
               SOLAR NET-METER
             </span>
           </div>
@@ -128,6 +158,21 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
           <span className="text-emerald-400 font-semibold">Ready</span>
         </div>
       </div>
+
+      {/* Solar Sync Bridge Modal */}
+      <SolarSyncModal
+        isOpen={isSolarSyncOpen}
+        onClose={() => setIsSolarSyncOpen(false)}
+        lastSolarSync={solar.lastSynced}
+        syncedFrom={solar.syncedFrom}
+        currentKw={solar.currentKw}
+        dailyKwh={solar.dailyKwh}
+        onSyncSuccess={() => {
+          setTimeout(() => {
+            window.location.reload();
+          }, 600);
+        }}
+      />
     </div>
   );
 }

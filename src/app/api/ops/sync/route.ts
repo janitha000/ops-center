@@ -4,15 +4,17 @@ import { fetchSpendIncomeData } from "@/lib/connectors/expenseTracker";
 import { fetchFinancialBayData } from "@/lib/connectors/financialDashboard";
 import { fetchInvestorDashboardData } from "@/lib/connectors/investorDashboard";
 import { fetchBinanceBotData } from "@/lib/connectors/binanceBot";
+import { getSolarTelemetry } from "@/lib/connectors/opsStore";
 import { OpsDashboardPayload } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
-  const [healthRes, spendIncomeRes, financeRes, investRes, botRes] = await Promise.allSettled([
+  const [healthRes, spendIncomeRes, financeRes, investRes, botRes, solarRes] = await Promise.allSettled([
     fetchCalorieCounterData(),
     fetchSpendIncomeData(),
     fetchFinancialBayData(),
     fetchInvestorDashboardData(),
     fetchBinanceBotData(),
+    getSolarTelemetry(),
   ]);
 
   const health = healthRes.status === "fulfilled" ? healthRes.value : (await fetchCalorieCounterData());
@@ -20,6 +22,7 @@ export async function GET(req: NextRequest) {
   const finance = financeRes.status === "fulfilled" ? financeRes.value : (await fetchFinancialBayData());
   const investments = investRes.status === "fulfilled" ? investRes.value : (await fetchInvestorDashboardData());
   const bot = botRes.status === "fulfilled" ? botRes.value : (await fetchBinanceBotData());
+  const liveSolar = solarRes.status === "fulfilled" ? solarRes.value : null;
 
   // ── Compute Cross-Domain Metrics ──────────────────────────────────────────
   const netIitPassive = investments.monthlyYields.netIit || finance.monthlyPassiveYield.netMonthlyAfterProgressiveIit;
@@ -53,13 +56,14 @@ export async function GET(req: NextRequest) {
     investments,
     bot,
     gridFleet: {
-      solar: {
+      solar: liveSolar || {
         currentKw: 4.85,
         dailyKwh: 24.6,
         dailyTargetKwh: 30.0,
         gridExportStatus: "EXPORTING",
         netGridKw: 2.35,
         lifetimeMwh: 14.82,
+        stationCode: "NE=58772902",
       },
       fleet: {
         vehicleName: "BYD Sealion 6 AWD",
