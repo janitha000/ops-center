@@ -53,8 +53,8 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
   const passivePct = inflow.totalInflow > 0 ? (inflow.lastMonthPassive / inflow.totalInflow) * 100 : 0;
 
   return (
-    <div className="bg-[#140b04]/90 border border-[#381a07] border-t border-t-white/10 rounded-md p-3.5 flex flex-col justify-between h-full font-sans">
-      <div>
+    <div className="bg-[#140b04]/90 border border-[#381a07] border-t border-t-white/10 rounded-md p-3.5 flex flex-col h-full font-sans">
+      <div className="flex-1 flex flex-col min-h-0">
         {/* ── BAY HEADER ── */}
         <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[#381a07]">
           <div className="flex items-center gap-2">
@@ -334,8 +334,8 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
         </div>
 
         {/* ── ROW 3: DETAILED DRILL-DOWN TABS (HOUSEHOLD vs LOANS vs OD vs VINDYA vs TAXES) ── */}
-        <div>
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5 overflow-x-auto">
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5 overflow-x-auto shrink-0">
             <div className="flex items-center gap-1 font-mono text-[9px] shrink-0">
               <button
                 onClick={() => setActiveTab("normal")}
@@ -392,7 +392,7 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
             </span>
           </div>
 
-          <div className="border border-[#381a07] rounded-sm bg-[#0b0602] divide-y divide-[#381a07] max-h-[140px] overflow-y-auto">
+          <div className="flex-1 min-h-[160px] border border-[#381a07] rounded-sm bg-[#0b0602] divide-y divide-[#381a07] overflow-y-auto">
             {/* TAB 1: NORMAL HOUSEHOLD LIVING EXPENSES */}
             {activeTab === "normal" && (
               <>
@@ -571,7 +571,7 @@ export function SpendIncomeBay({ spendIncome, currency }: SpendIncomeBayProps) {
       </div>
 
       {/* ── BAY FOOTER TELEMETRY ── */}
-      <div className="pt-2 mt-2 border-t border-[#381a07] grid grid-cols-3 gap-1.5 text-[10px] font-mono text-slate-400">
+      <div className="pt-2 mt-2 border-t border-[#381a07] shrink-0 grid grid-cols-3 gap-1.5 text-[10px] font-mono text-slate-400">
         <div>
           <span className="block text-[8px] uppercase tracking-wider text-slate-500">Daily Average Burn</span>
           <span className="text-slate-200 font-semibold">{formatVal(outflow.household.dailyAverageSpend)}/d</span>
