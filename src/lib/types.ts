@@ -56,7 +56,7 @@ export type FinancialData = {
     realizedGainYtd: number;
     tickers: CseStockTicker[];
     lastPalSync?: string;
-    syncedFrom?: "pal.lk" | "manual" | "fallback";
+    syncedFrom?: "pal.lk" | "manual" | "financial-dashboard" | "fallback";
   };
   hardCurrencyHedgePct: number;
 };

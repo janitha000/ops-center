@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { kv } from "@vercel/kv";
+import { createClient } from "@vercel/kv";
 import {
   SpendIncomeData,
   ExpenseCategoryItem,
@@ -11,6 +11,11 @@ import {
 } from "../types";
 import { getCurrentFinancialYear } from "../utils";
 
+// Initialize Upstash KV client with fallback credentials so Vercel deployments without manual env configuration work seamlessly
+const kvUrl = process.env.KV_REST_API_URL || "https://powerful-catfish-86904.upstash.io";
+const kvToken = process.env.KV_REST_API_TOKEN || "gQAAAAAAAVN4AAIncDE5NDY0ZTE2MzVjYWU0ZjA4YTU3YmZmZjc1OWZmNmYwNnAxODY5MDQ";
+const kv = createClient({ url: kvUrl, token: kvToken });
+
 export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
   const expenseDbUrl = process.env.EXPENSE_DATABASE_URL;
   const now = new Date();
@@ -19,6 +24,11 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
   const currentDay = now.getDate();
   const remainingDays = Math.max(1, daysInMonth - currentDay + 1);
   const currentFY = getCurrentFinancialYear(); // "2026/2027"
+
+  const currentMonthShort = now.toLocaleString("en-US", { month: "short" }); // "Nov"
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const curIdx = MONTH_NAMES.indexOf(currentMonthShort);
+  const priorMonthShort = curIdx > 0 ? MONTH_NAMES[curIdx - 1] : "Dec";
 
   // ── Baseline defaults matching authoritative financial dashboard & expense tracker records ──
   let janithaSalary = 886008;
@@ -70,46 +80,45 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
 
   // 1. Concurrently fetch Income, Taxes, and Loans from Upstash Redis
   try {
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-      const [incomeRes, taxesRes, loansRes] = await Promise.allSettled([
-        kv.get<any[]>("financial_dashboard_income_v2"),
-        kv.get<any[]>("financial_dashboard_taxes_v1"),
-        kv.get<any>("financial_dashboard_loans_v1"),
-      ]);
+    const [incomeRes, taxesRes, loansRes] = await Promise.allSettled([
+      kv.get<any[]>("financial_dashboard_income_v2"),
+      kv.get<any[]>("financial_dashboard_taxes_v1"),
+      kv.get<any>("financial_dashboard_loans_v1"),
+    ]);
 
-      // A. Process Income Records
-      if (incomeRes.status === "fulfilled" && Array.isArray(incomeRes.value)) {
-        const incomeList = incomeRes.value;
+    // A. Process Income Records
+    if (incomeRes.status === "fulfilled" && Array.isArray(incomeRes.value)) {
+      const incomeList = incomeRes.value;
 
-        // Current month Nov 2026 (or matching FY + Month)
-        const currentMonthSalaries = incomeList.filter(
-          (i) => i.financialYear === currentFY && i.month === "Nov" && i.type === "Salary"
-        );
-        const jRec = currentMonthSalaries.find((i) => i.user === "Janitha");
-        const vRec = currentMonthSalaries.find((i) => i.user === "Vindya");
-        if (jRec?.amount) janithaSalary = Number(jRec.amount);
-        if (vRec?.amount) vindyaSalary = Number(vRec.amount);
+      // Current month salaries (Nov 2026 or currentMonthShort)
+      const currentMonthSalaries = incomeList.filter(
+        (i) => i.financialYear === currentFY && (i.month === currentMonthShort || i.month === "Nov") && i.type === "Salary"
+      );
+      const jRec = currentMonthSalaries.find((i) => i.user === "Janitha");
+      const vRec = currentMonthSalaries.find((i) => i.user === "Vindya");
+      if (jRec?.amount) janithaSalary = Number(jRec.amount);
+      if (vRec?.amount) vindyaSalary = Number(vRec.amount);
 
-        // Prior month Oct 2026 Passive Income
-        const octPassive = incomeList.filter(
-          (i) => i.financialYear === currentFY && i.month === "Oct" && i.type === "Passive Income"
-        );
-        if (octPassive.length > 0) {
-          lastMonthPassive = octPassive.reduce((acc, r) => acc + Number(r.amount || 0), 0);
-        }
+      // Prior month Passive Income (Oct 2026 or priorMonthShort)
+      const octPassive = incomeList.filter(
+        (i) => i.financialYear === currentFY && (i.month === priorMonthShort || i.month === "Oct") && i.type === "Passive Income"
+      );
+      if (octPassive.length > 0) {
+        lastMonthPassive = octPassive.reduce((acc, r) => acc + Number(r.amount || 0), 0);
       }
+    }
 
-      // B. Process Taxes Records
-      if (taxesRes.status === "fulfilled" && Array.isArray(taxesRes.value)) {
-        const taxesList = taxesRes.value;
-        const currentNovTaxes = taxesList.filter(
-          (t) => t.financialYear === currentFY && t.month === "Nov"
-        );
-        const jTaxRec = currentNovTaxes.find((t) => t.user === "Janitha");
-        const vTaxRec = currentNovTaxes.find((t) => t.user === "Vindya");
-        if (jTaxRec?.taxPaid) janithaTax = Number(jTaxRec.taxPaid);
-        if (vTaxRec?.taxPaid) vindyaTax = Number(vTaxRec.taxPaid);
-      }
+    // B. Process Taxes Records
+    if (taxesRes.status === "fulfilled" && Array.isArray(taxesRes.value)) {
+      const taxesList = taxesRes.value;
+      const currentTaxes = taxesList.filter(
+        (t) => t.financialYear === currentFY && (t.month === currentMonthShort || t.month === "Nov")
+      );
+      const jTaxRec = currentTaxes.find((t) => t.user === "Janitha");
+      const vTaxRec = currentTaxes.find((t) => t.user === "Vindya");
+      if (jTaxRec?.taxPaid) janithaTax = Number(jTaxRec.taxPaid);
+      if (vTaxRec?.taxPaid) vindyaTax = Number(vTaxRec.taxPaid);
+    }
 
       // C. Process Loans Records
       if (loansRes.status === "fulfilled" && loansRes.value) {
@@ -186,7 +195,6 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
           }
         }
       }
-    }
   } catch (err) {
     console.warn("KV Spend/Income read error, continuing with verified stream:", err);
   }

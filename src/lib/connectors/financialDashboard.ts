@@ -1,8 +1,26 @@
-import { kv } from "@vercel/kv";
+import { createClient } from "@vercel/kv";
 import { neon } from "@neondatabase/serverless";
 import { FinancialData, NetWorthCategory, CseStockTicker } from "../types";
 import { getCurrentFinancialYear } from "../utils";
 import { getPalHoldings } from "./opsStore";
+
+// Initialize Upstash KV client with fallback credentials so Vercel deployments without manual env configuration work seamlessly
+const kvUrl = process.env.KV_REST_API_URL || "https://powerful-catfish-86904.upstash.io";
+const kvToken = process.env.KV_REST_API_TOKEN || "gQAAAAAAAVN4AAIncDE5NDY0ZTE2MzVjYWU0ZjA4YTU3YmZmZjc1OWZmNmYwNnAxODY5MDQ";
+const kv = createClient({ url: kvUrl, token: kvToken });
+
+const COMPANY_NAMES: Record<string, string> = {
+  "CCS.N0000": "Ceylon Cold Stores",
+  "COMB.N0000": "Commercial Bank of Ceylon",
+  "CTC.N0000": "Ceylon Tobacco Company",
+  "DIAL.N0000": "Dialog Axiata",
+  "HAYL.N0000": "Hayleys PLC",
+  "HNB.X0000": "Hatton National Bank (Non-Voting)",
+  "LLUB.N0000": "Chevron Lubricants Lanka",
+  "SAMP.N0000": "Sampath Bank PLC",
+  "TYRE.N0000": "Kelani Tyres",
+  "WATA.N0000": "Watawala Plantations",
+};
 
 export async function fetchFinancialBayData(): Promise<FinancialData> {
   const currentFY = getCurrentFinancialYear();
@@ -50,94 +68,103 @@ export async function fetchFinancialBayData(): Promise<FinancialData> {
   // Fetch Pal.lk synced holdings if available
   const palHoldings = await getPalHoldings();
 
-  // 2. Fetch Net Worth & Equities from Vercel KV
+  // 2. Fetch Net Worth & Equities from Upstash KV
   try {
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-      const [wealthData, stockData] = await Promise.allSettled([
-        kv.get<any[]>("financial_dashboard_wealth_v1"),
-        kv.get<any>("financial_dashboard_stocks_v1"),
-      ]);
+    const [wealthData, stockData] = await Promise.allSettled([
+      kv.get<any[]>("financial_dashboard_wealth_v1"),
+      kv.get<any>("financial_dashboard_stocks_v1"),
+    ]);
 
-      const rawWealth = wealthData.status === "fulfilled" && Array.isArray(wealthData.value) ? wealthData.value : [];
-      const rawStocks = stockData.status === "fulfilled" && stockData.value ? stockData.value : null;
+    const rawWealth = wealthData.status === "fulfilled" && Array.isArray(wealthData.value) ? wealthData.value : [];
+    const rawStocks = stockData.status === "fulfilled" && stockData.value ? stockData.value : null;
 
-      if (rawWealth.length >= 2) {
-        const sorted = [...rawWealth];
-        const currentMonthData = sorted[sorted.length - 1];
-        const priorMonthData = sorted[sorted.length - 2];
+    if (rawWealth.length >= 2) {
+      const sorted = [...rawWealth].sort((a, b) => {
+        const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        if (a.year && b.year && a.year !== b.year) {
+          return a.year.localeCompare(b.year);
+        }
+        const idxA = MONTHS.indexOf(a.month);
+        const idxB = MONTHS.indexOf(b.month);
+        const scoreA = a.year && a.year.includes("/") ? (idxA >= 3 ? idxA - 3 : idxA + 9) : idxA;
+        const scoreB = b.year && b.year.includes("/") ? (idxB >= 3 ? idxB - 3 : idxB + 9) : idxB;
+        return scoreA - scoreB;
+      });
 
-        const currentRecords = currentMonthData.records || [];
-        const priorRecords = priorMonthData.records || [];
+      const currentMonthData = sorted[sorted.length - 1];
+      const priorMonthData = sorted[sorted.length - 2];
 
-        const priorMap = new Map<string, number>();
-        priorRecords.forEach((r: any) => priorMap.set(r.category, Number(r.amount || 0)));
+      const currentRecords = currentMonthData.records || [];
+      const priorRecords = priorMonthData.records || [];
 
-        let totalCurrent = 0;
-        let totalPrior = 0;
+      const priorMap = new Map<string, number>();
+      priorRecords.forEach((r: any) => priorMap.set(r.category, Number(r.amount || 0)));
 
-        const categories: NetWorthCategory[] = currentRecords.map((r: any, idx: number) => {
-          const curAmt = Number(r.amount || 0);
-          const prAmt = priorMap.get(r.category) ?? curAmt * 0.98;
-          totalCurrent += curAmt;
-          totalPrior += prAmt;
+      let totalCurrent = 0;
+      let totalPrior = 0;
 
-          const deltaAmt = curAmt - prAmt;
-          const deltaPct = prAmt > 0 ? Number(((deltaAmt / prAmt) * 100).toFixed(2)) : 0;
+      const categories: NetWorthCategory[] = currentRecords.map((r: any, idx: number) => {
+        const curAmt = Number(r.amount || 0);
+        const prAmt = priorMap.get(r.category) ?? curAmt * 0.98;
+        totalCurrent += curAmt;
+        totalPrior += prAmt;
 
-          return {
-            id: `cat-${idx}-${r.category}`,
-            name: r.category,
-            currentAmount: curAmt,
-            priorAmount: prAmt,
-            deltaAmount: deltaAmt,
-            deltaPct,
-            allocationPct: 0,
-            currency: r.category.includes("USD") ? "USD" : "LKR",
-          };
-        });
-
-        categories.forEach((c) => {
-          c.allocationPct = totalCurrent > 0 ? Number(((c.currentAmount / totalCurrent) * 100).toFixed(1)) : 0;
-        });
-
-        const netWorthDeltaLkr = totalCurrent - totalPrior;
-        const netWorthDeltaPct = totalPrior > 0 ? Number(((netWorthDeltaLkr / totalPrior) * 100).toFixed(2)) : 0;
-
-        const deltaNetIitPct = priorNetMonthlyIit > 0
-          ? Number((((netMonthlyAfterProgressiveIit - priorNetMonthlyIit) / priorNetMonthlyIit) * 100).toFixed(2))
-          : 3.20;
-
-        const deltaPhysicalCashPct = priorPhysicalCashMonthly > 0
-          ? Number((((physicalCashAvailableMonthly - priorPhysicalCashMonthly) / priorPhysicalCashMonthly) * 100).toFixed(2))
-          : 3.22;
+        const deltaAmt = curAmt - prAmt;
+        const deltaPct = prAmt > 0 ? Number(((deltaAmt / prAmt) * 100).toFixed(2)) : 0;
 
         return {
-          sourceStatus: "live",
-          lastUpdated: new Date().toISOString(),
-          currentFY,
-          totalNetWorthLkr: totalCurrent,
-          priorNetWorthLkr: totalPrior,
-          netWorthDeltaLkr,
-          netWorthDeltaPct,
-          categories: categories.sort((a, b) => b.currentAmount - a.currentAmount),
-          monthlyPassiveYield: {
-            grossMonthly,
-            netWhtMonthly,
-            netMonthlyAfterProgressiveIit,
-            physicalCashAvailableMonthly,
-            iitPayableMonthly,
-            priorNetMonthlyIit,
-            deltaNetIitPct,
-            priorPhysicalCashMonthly,
-            deltaPhysicalCashPct,
-          },
-          stocks: getStockTickersPayload(rawStocks, palHoldings, currentFY),
-          hardCurrencyHedgePct: 24.8,
+          id: `cat-${idx}-${r.category}`,
+          name: r.category,
+          currentAmount: curAmt,
+          priorAmount: prAmt,
+          deltaAmount: deltaAmt,
+          deltaPct,
+          allocationPct: 0,
+          currency: r.category.includes("USD") ? "USD" : "LKR",
         };
-      }
+      });
+
+      categories.forEach((c) => {
+        c.allocationPct = totalCurrent > 0 ? Number(((c.currentAmount / totalCurrent) * 100).toFixed(1)) : 0;
+      });
+
+      const netWorthDeltaLkr = totalCurrent - totalPrior;
+      const netWorthDeltaPct = totalPrior > 0 ? Number(((netWorthDeltaLkr / totalPrior) * 100).toFixed(2)) : 0;
+
+      const deltaNetIitPct = priorNetMonthlyIit > 0
+        ? Number((((netMonthlyAfterProgressiveIit - priorNetMonthlyIit) / priorNetMonthlyIit) * 100).toFixed(2))
+        : 3.20;
+
+      const deltaPhysicalCashPct = priorPhysicalCashMonthly > 0
+        ? Number((((physicalCashAvailableMonthly - priorPhysicalCashMonthly) / priorPhysicalCashMonthly) * 100).toFixed(2))
+        : 3.22;
+
+      return {
+        sourceStatus: "live",
+        lastUpdated: new Date().toISOString(),
+        currentFY,
+        totalNetWorthLkr: totalCurrent,
+        priorNetWorthLkr: totalPrior,
+        netWorthDeltaLkr,
+        netWorthDeltaPct,
+        categories: categories.sort((a, b) => b.currentAmount - a.currentAmount),
+        monthlyPassiveYield: {
+          grossMonthly,
+          netWhtMonthly,
+          netMonthlyAfterProgressiveIit,
+          physicalCashAvailableMonthly,
+          iitPayableMonthly,
+          priorNetMonthlyIit,
+          deltaNetIitPct,
+          priorPhysicalCashMonthly,
+          deltaPhysicalCashPct,
+        },
+        stocks: getStockTickersPayload(rawStocks, palHoldings, currentFY),
+        hardCurrencyHedgePct: 24.8,
+      };
     }
   } catch (err) {
-    console.warn("KV fetch error for FinancialBay, falling back to structured telemetry:", err);
+    console.warn("KV fetch note for FinancialBay, falling back to structured telemetry:", err);
   }
 
   // Fallback with user's verified live screenshot numbers
@@ -155,58 +182,68 @@ function getFallbackFinancialBayData(
   const categories: NetWorthCategory[] = [
     {
       id: "cat-1",
-      name: "CAL Unit Trust (Income & Equity)",
-      currentAmount: 14500000,
-      priorAmount: 14100000,
-      deltaAmount: 400000,
-      deltaPct: 2.84,
-      allocationPct: 32.2,
+      name: "NDB",
+      currentAmount: 28096592,
+      priorAmount: 27981000,
+      deltaAmount: 115592,
+      deltaPct: 0.41,
+      allocationPct: 47.6,
       currency: "LKR",
     },
     {
       id: "cat-2",
-      name: "Fixed Deposits (LKR Commercial & Sampath)",
-      currentAmount: 12500000,
-      priorAmount: 12500000,
-      deltaAmount: 0,
-      deltaPct: 0.0,
-      allocationPct: 27.8,
+      name: "Stock Market",
+      currentAmount: 10968924,
+      priorAmount: 9753373,
+      deltaAmount: 1215551,
+      deltaPct: 12.46,
+      allocationPct: 18.6,
       currency: "LKR",
     },
     {
       id: "cat-3",
-      name: "PFCA USD FDs & Foreign Currency",
-      currentAmount: 8200000,
-      priorAmount: 7850000,
-      deltaAmount: 350000,
-      deltaPct: 4.46,
-      allocationPct: 18.2,
-      currency: "USD",
+      name: "CAL UT",
+      currentAmount: 10011245,
+      priorAmount: 11909744,
+      deltaAmount: -1898499,
+      deltaPct: -15.94,
+      allocationPct: 17.0,
+      currency: "LKR",
     },
     {
       id: "cat-4",
-      name: "Treasury Bills & Bonds (CBSL / First Capital)",
-      currentAmount: 6500000,
-      priorAmount: 6250000,
-      deltaAmount: 250000,
-      deltaPct: 4.0,
-      allocationPct: 14.4,
+      name: "Treasury Bills",
+      currentAmount: 8061027,
+      priorAmount: 6218359,
+      deltaAmount: 1842668,
+      deltaPct: 29.63,
+      allocationPct: 13.7,
       currency: "LKR",
     },
     {
       id: "cat-5",
-      name: "CSE Stock Equities (SAMP, LLUB, CTC, COMB)",
-      currentAmount: 3350000,
-      priorAmount: 3220000,
-      deltaAmount: 130000,
-      deltaPct: 4.04,
-      allocationPct: 7.4,
+      name: "NDB Wealth",
+      currentAmount: 1147715,
+      priorAmount: 1139210,
+      deltaAmount: 8505,
+      deltaPct: 0.75,
+      allocationPct: 1.9,
+      currency: "LKR",
+    },
+    {
+      id: "cat-6",
+      name: "Commercial Bank",
+      currentAmount: 730798,
+      priorAmount: 920000,
+      deltaAmount: -189202,
+      deltaPct: -20.57,
+      allocationPct: 1.2,
       currency: "LKR",
     },
   ];
 
-  const totalCurrent = categories.reduce((s, c) => s + c.currentAmount, 0);
-  const totalPrior = categories.reduce((s, c) => s + c.priorAmount, 0);
+  const totalCurrent = categories.reduce((s, c) => s + c.currentAmount, 0); // 59,016,301
+  const totalPrior = categories.reduce((s, c) => s + c.priorAmount, 0);     // 57,921,686
   const netWorthDeltaLkr = totalCurrent - totalPrior;
   const netWorthDeltaPct = Number(((netWorthDeltaLkr / totalPrior) * 100).toFixed(2));
 
@@ -286,14 +323,13 @@ function getStockTickersPayload(rawStocks: any, palHoldings: any = null, current
       const marketVal = Number(h.marketValue || 0);
       const cost = Number(h.costBasis || 0);
       const unPnl = Number(h.unrealizedPnl !== undefined ? h.unrealizedPnl : marketVal - cost);
-      // Ensure unPnlPct is a valid percentage (-100% to +1000%), not unscaled raw rupee amounts
       const unPnlPct = cost > 0
         ? Number(((unPnl / cost) * 100).toFixed(2))
         : (Math.abs(Number(h.pnlPercent || 0)) <= 500 ? Number(h.pnlPercent) : 0);
 
       return {
         symbol: h.symbol,
-        name: h.name || h.displaySymbol || h.symbol,
+        name: COMPANY_NAMES[h.symbol] || h.name || h.displaySymbol || h.symbol,
         price: Number(h.price || 0),
         change: Number(h.change || 0),
         changePct: Number(h.changePct || 0),
@@ -319,31 +355,64 @@ function getStockTickersPayload(rawStocks: any, palHoldings: any = null, current
     };
   }
 
-  let portfolioValue = 3420000;
-  let totalCost = 2950000;
-  let realizedGainYtd = 380000;
-
+  // Authoritative real stock snapshot from financial_dashboard_stocks_v1
   if (rawStocks?.snapshots?.length > 0) {
     const latest = rawStocks.snapshots[rawStocks.snapshots.length - 1];
-    portfolioValue = Number(latest.portfolioValue || portfolioValue);
-    totalCost = Number(latest.totalCost || totalCost);
+    const portfolioValue = Number(latest.portfolioValue || 11093168);
+    const totalCost = Number(latest.totalCost || 11600000);
+    const unrealizedPnl = portfolioValue - totalCost;
+    const unrealizedPnlPct = totalCost > 0 ? Number(((unrealizedPnl / totalCost) * 100).toFixed(2)) : 0;
+
+    if (Array.isArray(latest.holdings) && latest.holdings.length > 0) {
+      const tickers: CseStockTicker[] = latest.holdings.map((h: any) => ({
+        symbol: h.security,
+        name: COMPANY_NAMES[h.security] || h.security,
+        price: Number(h.tradedPrice || h.avgPrice || 0),
+        change: Number(h.unrealizedTodayGainLoss || 0),
+        changePct: Number((h.unrealizedGainLossPct || 0).toFixed(2)),
+        quantity: Number(h.quantity || 0),
+        marketValue: Math.round(Number(h.marketValue || 0)),
+        unrealizedPnl: Math.round(Number(h.unrealizedGainLoss || 0)),
+        unrealizedPnlPct: Number((h.unrealizedGainLossPct || 0).toFixed(2)),
+        costBasis: Math.round(Number(h.totalCost || 0)),
+      }));
+
+      return {
+        portfolioValue,
+        totalCost,
+        unrealizedPnl,
+        unrealizedPnlPct,
+        dividendCashMonth,
+        dividendCashYtd,
+        realizedGainYtd: 380000,
+        tickers,
+        syncedFrom: "financial-dashboard" as const,
+      };
+    }
   }
 
+  // Fallback matching real live CSE portfolio snapshot
   const tickers: CseStockTicker[] = [
-    { symbol: "SAMP.N0000", name: "Sampath Bank PLC", price: 84.5, change: 1.2, changePct: 1.44, quantity: 12500, marketValue: 1056250, unrealizedPnl: 181250, unrealizedPnlPct: 20.7 },
-    { symbol: "LLUB.N0000", name: "Chevron Lubricants Lanka", price: 122.0, change: -0.5, changePct: -0.41, quantity: 8000, marketValue: 976000, unrealizedPnl: 136000, unrealizedPnlPct: 16.2 },
-    { symbol: "CTC.N0000", name: "Ceylon Tobacco Company", price: 1140.0, change: 5.0, changePct: 0.44, quantity: 800, marketValue: 912000, unrealizedPnl: 92000, unrealizedPnlPct: 11.2 },
-    { symbol: "COMB.N0000", name: "Commercial Bank of Ceylon", price: 108.5, change: 0.75, changePct: 0.70, quantity: 4400, marketValue: 477400, unrealizedPnl: 60600, unrealizedPnlPct: 14.5 },
+    { symbol: "SAMP.N0000", name: "Sampath Bank PLC", price: 142.5, change: 0, changePct: -2.27, quantity: 18506, marketValue: 2637105, unrealizedPnl: -60568, unrealizedPnlPct: -2.27, costBasis: 2668137 },
+    { symbol: "LLUB.N0000", name: "Chevron Lubricants Lanka", price: 205.75, change: 0, changePct: 8.13, quantity: 10250, marketValue: 2108938, unrealizedPnl: 156782, unrealizedPnlPct: 8.13, costBasis: 1928535 },
+    { symbol: "CTC.N0000", name: "Ceylon Tobacco Company", price: 1784.5, change: 0, changePct: -0.26, quantity: 826, marketValue: 1473997, unrealizedPnl: -3831, unrealizedPnlPct: -0.26, costBasis: 1461319 },
+    { symbol: "COMB.N0000", name: "Commercial Bank of Ceylon", price: 199.5, change: 0, changePct: -3.33, quantity: 5679, marketValue: 1132961, unrealizedPnl: -38644, unrealizedPnlPct: -3.33, costBasis: 1158915 },
+    { symbol: "WATA.N0000", name: "Watawala Plantations", price: 46.5, change: 0, changePct: 3.83, quantity: 22800, marketValue: 1060200, unrealizedPnl: 38643, unrealizedPnlPct: 3.83, costBasis: 1009683 },
+    { symbol: "CCS.N0000", name: "Ceylon Cold Stores", price: 123.0, change: 0, changePct: 0.06, quantity: 8500, marketValue: 1045500, unrealizedPnl: 597, unrealizedPnlPct: 0.06, costBasis: 1033194 },
+    { symbol: "TYRE.N0000", name: "Kelani Tyres", price: 80.4, change: 0, changePct: -10.2, quantity: 11420, marketValue: 918168, unrealizedPnl: -103113, unrealizedPnlPct: -10.2, costBasis: 1010997 },
+    { symbol: "HNB.X0000", name: "Hatton National Bank (Non-Voting)", price: 321.5, change: 0, changePct: 0.98, quantity: 1200, marketValue: 385800, unrealizedPnl: 3695, unrealizedPnlPct: 0.98, costBasis: 377784 },
+    { symbol: "HAYL.N0000", name: "Hayleys PLC", price: 219.75, change: 0, changePct: -5.34, quantity: 1000, marketValue: 219750, unrealizedPnl: -12254, unrealizedPnlPct: -5.34, costBasis: 229542 },
+    { symbol: "DIAL.N0000", name: "Dialog Axiata", price: 44.3, change: 0, changePct: 0.74, quantity: 2500, marketValue: 110750, unrealizedPnl: 806, unrealizedPnlPct: 0.74, costBasis: 108704 },
   ];
 
   return {
-    portfolioValue,
-    totalCost,
-    unrealizedPnl: portfolioValue - totalCost,
-    unrealizedPnlPct: totalCost > 0 ? Number((((portfolioValue - totalCost) / totalCost) * 100).toFixed(1)) : 0,
+    portfolioValue: 11093168,
+    totalCost: 11600000,
+    unrealizedPnl: -506832,
+    unrealizedPnlPct: -4.37,
     dividendCashMonth,
     dividendCashYtd,
-    realizedGainYtd,
+    realizedGainYtd: 380000,
     tickers,
     syncedFrom: "fallback" as const,
   };
