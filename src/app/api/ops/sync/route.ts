@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   const solarBase = liveSolar || {
     currentKw: 4.85,
     dailyKwh: 24.6,
-    dailyTargetKwh: 30.0,
+    dailyTargetKwh: 15.0,
     yearlyMwh: 3.84,
     monthlyKwh: 145.0,
     gridExportStatus: "EXPORTING" as const,
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
         date: `Nov ${d}`,
         generationKwh: gen,
         exportKwh: exp,
-        targetKwh: 30.0,
+        targetKwh: 15.0,
       });
     }
   }

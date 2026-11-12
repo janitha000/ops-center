@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     const dailyTargetKwh = typeof body.dailyTargetKwh === "number" && body.dailyTargetKwh > 0
       ? body.dailyTargetKwh
-      : 30.0;
+      : 15.0;
 
     let gridExportStatus: "EXPORTING" | "IMPORTING" | "NEUTRAL" = "EXPORTING";
     if (body.gridExportStatus === "IMPORTING" || body.gridExportStatus === "NEUTRAL") {

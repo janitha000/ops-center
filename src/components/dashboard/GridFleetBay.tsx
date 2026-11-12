@@ -61,7 +61,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const [chargingOverride, setChargingOverride] = useState(fleet.isCharging);
   const [isSolarSyncOpen, setIsSolarSyncOpen] = useState(false);
 
-  const solarTargetPct = Math.min(100, Math.round((solar.dailyKwh / solar.dailyTargetKwh) * 100));
+  const solarTargetPct = Math.min(100, Math.round((solar.dailyKwh / (solar.dailyTargetKwh || 15.0)) * 100));
   const syncTimeStr = formatRelativeTime(solar.lastSynced);
 
   // Segmented battery meter (10 segments)
@@ -79,7 +79,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
   const mtdGenerated = (solar.monthlyKwh && solar.monthlyKwh > 0)
     ? solar.monthlyKwh
     : calculatedHistorySum;
-  const mtdTarget = currentDay * (solar.dailyTargetKwh || 30.0);
+  const mtdTarget = currentDay * (solar.dailyTargetKwh || 15.0);
   const mtdExported = history
     .filter((h) => h.day <= currentDay)
     .reduce((sum, h) => sum + h.exportKwh, 0);
@@ -141,7 +141,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
           <div>
             <div className="flex justify-between text-[9px] font-mono text-slate-400 mb-0.5">
               <span>Today: <strong className="text-amber-300 font-semibold">{solar.dailyKwh.toFixed(1)} kWh</strong></span>
-              <span>Target: {solar.dailyTargetKwh} kWh ({solarTargetPct}%)</span>
+              <span>Target: {solar.dailyTargetKwh || 15} kWh ({solarTargetPct}%)</span>
             </div>
             <div className="h-1.5 w-full bg-[#201405] rounded-none overflow-hidden">
               <div
@@ -179,11 +179,11 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
                 <YAxis
                   stroke="#785324"
                   tick={{ fontSize: 7.5, fill: "#a8783e" }}
-                  domain={[0, 40]}
+                  domain={[0, 25]}
                   tickLine={false}
                 />
                 <ReferenceLine
-                  y={solar.dailyTargetKwh || 30.0}
+                  y={solar.dailyTargetKwh || 15.0}
                   stroke="#f59e0b"
                   strokeDasharray="2 2"
                   strokeWidth={1}
@@ -193,7 +193,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
                   {history.map((entry, index) => {
                     const isToday = entry.day === currentDay;
                     const isFuture = entry.day > currentDay;
-                    const isTargetMet = entry.generationKwh >= (solar.dailyTargetKwh || 30.0);
+                    const isTargetMet = entry.generationKwh >= (solar.dailyTargetKwh || 15.0);
                     const fill = isFuture
                       ? "#1a1005"
                       : isToday
@@ -219,7 +219,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
                 <span className="h-1.5 w-1.5 bg-[#10b981] inline-block" />
                 <span>Today (Live)</span>
               </span>
-              <span className="text-amber-400/80">30k Goal</span>
+              <span className="text-amber-400/80">{solar.dailyTargetKwh || 15} kWh Goal</span>
             </div>
             <div className="flex items-center gap-2 text-slate-300">
               <span>Avg: <strong className="text-amber-300">{avgDailyKwh} kWh/d</strong></span>
