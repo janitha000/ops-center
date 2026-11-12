@@ -32,7 +32,7 @@ export function OpsBar({ bot, tasks: initialTasks }: OpsBarProps) {
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[#6366f1]" />
             <h2 className="text-[10px] font-semibold tracking-wider uppercase text-indigo-400">
-              Zone 4: Mission Control &amp; Ops Bay
+              Zone 5: Mission Control &amp; Ops Bay
             </h2>
           </div>
 

@@ -222,12 +222,12 @@ export default function OperationsDashboard() {
             <BiometricsBay health={health} />
           </div>
 
-          {/* ZONE 3 EXTENSION: FLEET & RENEWABLE GRID (4 COLS) */}
+          {/* ZONE 4: FLEET & RENEWABLE GRID (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
             <GridFleetBay gridFleet={gridFleet} />
           </div>
 
-          {/* ZONE 4: MISSION CONTROL & OPS BAY (4 COLS) */}
+          {/* ZONE 5: MISSION CONTROL & OPS BAY (4 COLS) */}
           <div className="lg:col-span-4 h-full min-h-[380px]">
             <OpsBar bot={bot} tasks={sprintTasks} />
           </div>

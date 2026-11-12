@@ -95,7 +95,7 @@ export function GridFleetBay({ gridFleet }: GridFleetBayProps) {
           <div className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b] animate-pulse" />
             <h2 className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
-              Zone 3: Fleet &amp; Renewable Grid
+              Zone 4: Fleet &amp; Renewable Grid
             </h2>
           </div>
 
