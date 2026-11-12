@@ -169,56 +169,123 @@ export function FinancialBay({
           </div>
         </div>
 
-        {/* ── CATEGORY NET WORTH BREAKDOWN (WITH PNL COMPARED TO PRIOR HORIZON) ── */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5 px-0.5">
-            <span>Asset Category Telemetry</span>
-            <span className="font-mono text-slate-400">Allocation &amp; MoM Delta</span>
+        {/* ── TWO-PART CATEGORY MATRIX: 1. ASSET ALLOCATION & 2. MONTHLY INCOME PER CATEGORY ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+          {/* ── PART 1: ASSET CATEGORY TELEMETRY (CURRENT VIEW) ── */}
+          <div>
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5">
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span>1. Asset Category Telemetry</span>
+              </span>
+              <span className="font-mono text-[8px] text-slate-400">Allocation &amp; MoM Delta</span>
+            </div>
+
+            <div className="border border-[#133323] rounded-sm bg-[#040c08] divide-y divide-[#133323]">
+              {finance.categories.map((c) => {
+                const isGain = c.deltaAmount >= 0;
+                const isSelected = selectedCategory === c.id;
+
+                return (
+                  <div
+                    key={`capital-${c.id}`}
+                    onClick={() => setSelectedCategory(isSelected ? null : c.id)}
+                    className={`px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
+                      isSelected ? "bg-[#0d2a1d]" : "hover:bg-[#071911]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-500" />
+                        <span className="font-semibold text-slate-200 truncate max-w-[110px] sm:max-w-[135px] text-[11px]">
+                          {c.name}
+                        </span>
+                        <span className="text-[8.5px] px-1 py-0.2 rounded-sm bg-[#081a12] text-emerald-400 border border-[#133323] font-semibold">
+                          {c.allocationPct}%
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-200 font-bold text-[11px]">{formatVal(c.currentAmount)}</span>
+                        <span
+                          className={`text-[9.5px] font-semibold min-w-[38px] text-right ${
+                            isGain ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {formatPercent(c.deltaPct)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Micro allocation bar */}
+                    <div className="h-1 w-full bg-[#112419] rounded-none mt-1 overflow-hidden">
+                      <div className="h-full bg-emerald-500" style={{ width: `${c.allocationPct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="border border-[#133323] rounded-sm bg-[#040c08] divide-y divide-[#133323]">
-            {finance.categories.map((c) => {
-              const isGain = c.deltaAmount >= 0;
-              const isSelected = selectedCategory === c.id;
+          {/* ── PART 2: MONTHLY INCOME PER CATEGORY ── */}
+          <div>
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5">
+              <span className="flex items-center gap-1.5 text-amber-300">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>2. Monthly Income per Category</span>
+              </span>
+              <span className="font-mono text-[8px] text-amber-300 font-semibold">
+                {formatVal(monthlyPassiveYield.physicalCashAvailableMonthly)}/mo
+              </span>
+            </div>
 
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedCategory(isSelected ? null : c.id)}
-                  className={`px-3 py-2 text-xs font-mono cursor-pointer transition-colors ${
-                    isSelected ? "bg-[#0d2a1d]" : "hover:bg-[#071911]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-500" />
-                      <span className="font-semibold text-slate-200 truncate max-w-[280px] text-xs">
-                        {c.name}
-                      </span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-sm bg-[#081a12] text-emerald-400 border border-[#133323] font-semibold">
-                        {c.allocationPct}%
-                      </span>
+            <div className="border border-[#133323] rounded-sm bg-[#040c08] divide-y divide-[#133323]">
+              {finance.categories.map((c) => {
+                const incomeAmt = c.monthlyIncome || Math.round((c.allocationPct / 100) * monthlyPassiveYield.physicalCashAvailableMonthly);
+                const sharePct = c.incomeSharePct || (monthlyPassiveYield.physicalCashAvailableMonthly > 0 ? Number(((incomeAmt / monthlyPassiveYield.physicalCashAvailableMonthly) * 100).toFixed(1)) : 0);
+                const yieldPct = c.annualYieldPct || (c.currentAmount > 0 ? Number((((incomeAmt * 12) / c.currentAmount) * 100).toFixed(1)) : 0);
+                const isSelected = selectedCategory === c.id;
+
+                return (
+                  <div
+                    key={`income-${c.id}`}
+                    onClick={() => setSelectedCategory(isSelected ? null : c.id)}
+                    className={`px-2.5 py-1.5 text-xs font-mono cursor-pointer transition-colors ${
+                      isSelected ? "bg-[#0d2a1d]" : "hover:bg-[#071911]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-amber-400" />
+                        <span className="font-semibold text-slate-200 truncate max-w-[110px] sm:max-w-[135px] text-[11px]">
+                          {c.name}
+                        </span>
+                        <span className="text-[8.5px] px-1 py-0.2 rounded-sm bg-[#1f1505] text-amber-300 border border-[#4d3707] font-semibold">
+                          {sharePct}%
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-300 font-bold text-[11px]">
+                          {formatVal(incomeAmt)}<span className="text-[8.5px] text-slate-400 font-normal">/mo</span>
+                        </span>
+                        <span className="text-[9.5px] font-semibold min-w-[38px] text-right text-emerald-400" title="Effective Annualized Yield">
+                          ~{yieldPct}%
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                      <span className="text-slate-200 font-bold text-xs">{formatVal(c.currentAmount)}</span>
-                      <span
-                        className={`text-[11px] font-semibold w-16 text-right ${
-                          isGain ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {formatPercent(c.deltaPct)}
-                      </span>
+                    {/* Micro income share bar */}
+                    <div className="h-1 w-full bg-[#181308] rounded-none mt-1 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-600 to-amber-400"
+                        style={{ width: `${sharePct}%` }}
+                      />
                     </div>
                   </div>
-
-                  {/* Micro allocation bar */}
-                  <div className="h-1 w-full bg-[#112419] rounded-none mt-1.5 overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${c.allocationPct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
 

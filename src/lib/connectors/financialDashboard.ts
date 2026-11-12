@@ -22,6 +22,32 @@ const COMPANY_NAMES: Record<string, string> = {
   "WATA.N0000": "Watawala Plantations",
 };
 
+const CATEGORY_INCOME_DEFAULTS: Record<string, number> = {
+  "NDB": 118500,
+  "Stock Market": 98575,
+  "CAL UT": 89000,
+  "Treasury Bills": 52330,
+  "NDB Wealth": 8505,
+  "Commercial Bank": 6765,
+};
+
+function enrichCategoriesWithIncome(categories: NetWorthCategory[], totalMonthlyIncome: number) {
+  categories.forEach((c) => {
+    let amt = CATEGORY_INCOME_DEFAULTS[c.name];
+    if (amt === undefined) {
+      for (const [key, val] of Object.entries(CATEGORY_INCOME_DEFAULTS)) {
+        if (c.name.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(c.name.toLowerCase())) {
+          amt = val;
+          break;
+        }
+      }
+    }
+    c.monthlyIncome = amt || Math.round((c.allocationPct / 100) * totalMonthlyIncome);
+    c.incomeSharePct = totalMonthlyIncome > 0 ? Number(((c.monthlyIncome / totalMonthlyIncome) * 100).toFixed(1)) : 0;
+    c.annualYieldPct = c.currentAmount > 0 ? Number((((c.monthlyIncome * 12) / c.currentAmount) * 100).toFixed(1)) : 0;
+  });
+}
+
 export async function fetchFinancialBayData(): Promise<FinancialData> {
   const currentFY = getCurrentFinancialYear();
   const investorDbUrl = process.env.INVESTOR_DATABASE_URL;
@@ -127,6 +153,8 @@ export async function fetchFinancialBayData(): Promise<FinancialData> {
       categories.forEach((c) => {
         c.allocationPct = totalCurrent > 0 ? Number(((c.currentAmount / totalCurrent) * 100).toFixed(1)) : 0;
       });
+
+      enrichCategoriesWithIncome(categories, physicalCashAvailableMonthly);
 
       const netWorthDeltaLkr = totalCurrent - totalPrior;
       const netWorthDeltaPct = totalPrior > 0 ? Number(((netWorthDeltaLkr / totalPrior) * 100).toFixed(2)) : 0;
@@ -246,6 +274,8 @@ function getFallbackFinancialBayData(
   const totalPrior = categories.reduce((s, c) => s + c.priorAmount, 0);     // 57,921,686
   const netWorthDeltaLkr = totalCurrent - totalPrior;
   const netWorthDeltaPct = Number(((netWorthDeltaLkr / totalPrior) * 100).toFixed(2));
+
+  enrichCategoriesWithIncome(categories, physicalCashAvailableMonthly);
 
   return {
     sourceStatus: "fallback",

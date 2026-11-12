@@ -10,6 +10,9 @@ export type NetWorthCategory = {
   deltaPct: number;
   allocationPct: number;
   currency: "LKR" | "USD";
+  monthlyIncome?: number;
+  incomeSharePct?: number;
+  annualYieldPct?: number;
 };
 
 export type CseStockTicker = {
