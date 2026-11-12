@@ -4,7 +4,7 @@ import { fetchSpendIncomeData } from "@/lib/connectors/expenseTracker";
 import { fetchFinancialBayData } from "@/lib/connectors/financialDashboard";
 import { fetchInvestorDashboardData } from "@/lib/connectors/investorDashboard";
 import { fetchBinanceBotData } from "@/lib/connectors/binanceBot";
-import { getSolarTelemetry } from "@/lib/connectors/opsStore";
+import { getSolarTelemetry, fetchFusionSolarKioskData } from "@/lib/connectors/opsStore";
 import { OpsDashboardPayload } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
@@ -30,17 +30,21 @@ export async function GET(req: NextRequest) {
   }
 
   if (zone === "zone4" || zone === "solar" || zone === "fleet") {
-    const liveSolar = await getSolarTelemetry();
+    let liveSolar = await fetchFusionSolarKioskData();
+    if (!liveSolar) {
+      liveSolar = await getSolarTelemetry();
+    }
     const solarBase = liveSolar || {
       currentKw: 4.85,
       dailyKwh: 24.6,
       dailyTargetKwh: 15.0,
-      yearlyMwh: 3.84,
+      yearlyMwh: 3.85,
       monthlyKwh: 145.0,
       gridExportStatus: "EXPORTING" as const,
       netGridKw: 2.35,
-      lifetimeMwh: 3.84,
+      lifetimeMwh: 4.65,
       stationCode: "NE=58772902",
+      lastSynced: new Date().toISOString(),
     };
 
     const now = new Date();
@@ -96,12 +100,13 @@ export async function GET(req: NextRequest) {
   }
 
   // ── FULL DASHBOARD CONCURRENT SYNC ──
-  const [healthRes, spendIncomeRes, financeRes, investRes, botRes, solarRes] = await Promise.allSettled([
+  const [healthRes, spendIncomeRes, financeRes, investRes, botRes, kioskSolarRes, savedSolarRes] = await Promise.allSettled([
     fetchCalorieCounterData(),
     fetchSpendIncomeData(),
     fetchFinancialBayData(),
     fetchInvestorDashboardData(),
     fetchBinanceBotData(),
+    fetchFusionSolarKioskData(),
     getSolarTelemetry(),
   ]);
 
@@ -110,7 +115,9 @@ export async function GET(req: NextRequest) {
   const finance = financeRes.status === "fulfilled" ? financeRes.value : (await fetchFinancialBayData());
   const investments = investRes.status === "fulfilled" ? investRes.value : (await fetchInvestorDashboardData());
   const bot = botRes.status === "fulfilled" ? botRes.value : (await fetchBinanceBotData());
-  const liveSolar = solarRes.status === "fulfilled" ? solarRes.value : null;
+  const liveSolar = (kioskSolarRes.status === "fulfilled" && kioskSolarRes.value)
+    ? kioskSolarRes.value
+    : (savedSolarRes.status === "fulfilled" ? savedSolarRes.value : null);
 
   // ── Compute Cross-Domain Metrics ──────────────────────────────────────────
   const netIitPassive = investments.monthlyYields.netIit || finance.monthlyPassiveYield.netMonthlyAfterProgressiveIit;
@@ -205,7 +212,8 @@ export async function GET(req: NextRequest) {
 
   const solar = {
     ...solarBase,
-    yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.84,
+    lastSynced: liveSolar?.lastSynced || new Date().toISOString(),
+    yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.85,
     monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh,
     historyMonth,
   };
