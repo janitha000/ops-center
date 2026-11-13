@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
   // ── ZONE-SPECIFIC TARGETED SYNC ──
   if (zone === "zone1" || zone === "finance") {
     const [finance, investments] = await Promise.all([
-      fetchFinancialBayData(),
+      fetchFinancialBayData(true),
       fetchInvestorDashboardData(),
     ]);
     return NextResponse.json({ finance, investments });

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { savePalHoldings, getPalHoldings } from "@/lib/connectors/opsStore";
+import { savePalHoldings, getPalHoldings, refreshPalHoldingsFromCse } from "@/lib/connectors/opsStore";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -29,7 +29,21 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
+
+    if (body?.action === "refresh_cse") {
+      const refreshed = await refreshPalHoldingsFromCse(true);
+      return NextResponse.json(
+        {
+          success: true,
+          message: `Refreshed ${refreshed?.count || 0} CSE holdings from live CSE market feed`,
+          data: refreshed,
+        },
+        {
+          headers: CORS_HEADERS,
+        }
+      );
+    }
 
     // Pal.lk returns either an array of summaries or an object containing an array
     let items: any[] = [];
@@ -106,14 +120,15 @@ export async function POST(req: NextRequest) {
             marketValue = quantity * price;
           }
 
+          const netSalesProceeds = marketValue * (1 - 0.0112);
           const unrealizedPnl = Number(
-            item.unrealizedGain ?? item.pnl ?? (marketValue > 0 && costBasis > 0 ? marketValue - costBasis : 0)
+            item.unrealizedGain ?? item.unrealizedPnl ?? item.pnl ?? (marketValue > 0 && costBasis > 0 ? netSalesProceeds - costBasis : 0)
           );
           
-          // Compute mathematically accurate PnL percentage against cost basis
+          // Compute mathematically accurate PnL percentage against cost basis (after 1.12% CSE sell fees)
           let pnlPercent = 0;
           if (costBasis > 0) {
-            pnlPercent = Number((((marketValue - costBasis) / costBasis) * 100).toFixed(2));
+            pnlPercent = Number(((unrealizedPnl / costBasis) * 100).toFixed(2));
           } else if (item.pnlPercent !== undefined && Math.abs(item.pnlPercent) <= 500) {
             pnlPercent = Number(item.pnlPercent);
           } else {
@@ -137,9 +152,9 @@ export async function POST(req: NextRequest) {
         })
     );
 
-    const totalMarketValue = normalized.reduce((acc, h) => acc + h.marketValue, 0);
-    const totalCost = normalized.reduce((acc, h) => acc + h.costBasis, 0);
-    const totalUnrealizedPnl = totalMarketValue - totalCost;
+    const totalMarketValue = Number(normalized.reduce((acc, h) => acc + h.marketValue, 0).toFixed(2));
+    const totalCost = Number(normalized.reduce((acc, h) => acc + h.costBasis, 0).toFixed(2));
+    const totalUnrealizedPnl = Number(normalized.reduce((acc, h) => acc + h.unrealizedPnl, 0).toFixed(2));
     const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(2)) : 0;
 
     const payloadToSave = {

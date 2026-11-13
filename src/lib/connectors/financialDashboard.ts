@@ -2,7 +2,7 @@ import { createClient } from "@vercel/kv";
 import { neon } from "@neondatabase/serverless";
 import { FinancialData, NetWorthCategory, CseStockTicker, InvestorIncomeCategory } from "../types";
 import { getCurrentFinancialYear } from "../utils";
-import { getPalHoldings } from "./opsStore";
+import { getPalHoldings, refreshPalHoldingsFromCse } from "./opsStore";
 
 // Initialize Upstash KV client with fallback credentials so Vercel deployments without manual env configuration work seamlessly
 const kvUrl = process.env.KV_REST_API_URL || "https://powerful-catfish-86904.upstash.io";
@@ -117,7 +117,7 @@ export const INVESTOR_INCOME_CATEGORIES: InvestorIncomeCategory[] = [
   },
 ];
 
-export async function fetchFinancialBayData(): Promise<FinancialData> {
+export async function fetchFinancialBayData(forceRefreshCse = false): Promise<FinancialData> {
   const currentFY = getCurrentFinancialYear();
   const investorDbUrl = process.env.INVESTOR_DATABASE_URL;
 
@@ -160,8 +160,8 @@ export async function fetchFinancialBayData(): Promise<FinancialData> {
     }
   }
 
-  // Fetch Pal.lk synced holdings if available
-  const palHoldings = await getPalHoldings();
+  // Fetch Pal.lk synced holdings & automatically refresh live CSE quotes when older than 15 minutes (or on manual Zone 1 refresh)
+  const palHoldings = (await refreshPalHoldingsFromCse(forceRefreshCse)) || (await getPalHoldings());
 
   // 2. Fetch Net Worth & Equities from Upstash KV
   try {

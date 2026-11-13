@@ -206,6 +206,110 @@ export async function savePalHoldings(data: any): Promise<void> {
   }
 }
 
+const CSE_SELL_FEE_RATE = 0.0112; // 1.12% statutory CSE sell-side brokerage & fees (used by PAL.lk)
+
+export async function refreshPalHoldingsFromCse(force = false): Promise<any | null> {
+  const existing = await getPalHoldings();
+  if (!existing || !Array.isArray(existing.holdings) || existing.holdings.length === 0) {
+    return existing;
+  }
+
+  if (!force && existing.syncedAt) {
+    const ageMs = Date.now() - new Date(existing.syncedAt).getTime();
+    if (!Number.isNaN(ageMs) && ageMs < 15 * 60 * 1000) {
+      return existing;
+    }
+  }
+
+  try {
+    let updatedCount = 0;
+    const updatedHoldings = await Promise.all(
+      existing.holdings.map(async (h: any) => {
+        const cleanSymbol = String(h.symbol || "").trim().toUpperCase();
+        if (!cleanSymbol) return h;
+
+        let price = Number(h.price || 0);
+        let change = Number(h.change || 0);
+        let changePct = Number(h.changePct || 0);
+
+        try {
+          const res = await fetch("https://www.cse.lk/api/companyInfoSummery", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              "Referer": "https://www.cse.lk",
+            },
+            body: new URLSearchParams({ symbol: cleanSymbol }),
+            signal: AbortSignal.timeout(6000),
+            cache: "no-store",
+          });
+
+          if (res.ok) {
+            const j = await res.json();
+            const info = j?.reqSymbolInfo;
+            if (info && info.lastTradedPrice !== undefined && info.lastTradedPrice !== null) {
+              const livePrice = Number(info.lastTradedPrice);
+              if (livePrice > 0) {
+                price = livePrice;
+                change = Number(info.change ?? change);
+                changePct = Number(info.changePercentage ?? changePct);
+                updatedCount++;
+              }
+            }
+          }
+        } catch (cseErr) {
+          console.warn(`Live CSE quote fetch failed for ${cleanSymbol}:`, cseErr);
+        }
+
+        const quantity = Number(h.quantity || 0);
+        const costBasis = Number(h.costBasis || 0);
+        const marketValue = quantity > 0 && price > 0 ? Number((quantity * price).toFixed(2)) : Number(h.marketValue || 0);
+        const netSalesProceeds = marketValue * (1 - CSE_SELL_FEE_RATE);
+        const unrealizedPnl = costBasis > 0 ? Number((netSalesProceeds - costBasis).toFixed(2)) : Number(h.unrealizedPnl || 0);
+        const pnlPercent = costBasis > 0 ? Number(((unrealizedPnl / costBasis) * 100).toFixed(2)) : Number(h.pnlPercent || 0);
+
+        return {
+          ...h,
+          price: Number(price.toFixed(2)),
+          change: Number(change.toFixed(2)),
+          changePct: Number(changePct.toFixed(2)),
+          marketValue,
+          unrealizedPnl,
+          pnlPercent,
+        };
+      })
+    );
+
+    if (updatedCount === 0 && !force) {
+      return existing;
+    }
+
+    const totalMarketValue = Number(updatedHoldings.reduce((acc, h) => acc + h.marketValue, 0).toFixed(2));
+    const totalCost = Number(updatedHoldings.reduce((acc, h) => acc + h.costBasis, 0).toFixed(2));
+    const totalUnrealizedPnl = Number(updatedHoldings.reduce((acc, h) => acc + h.unrealizedPnl, 0).toFixed(2));
+    const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(2)) : 0;
+
+    const refreshedPayload = {
+      ...existing,
+      syncedAt: new Date().toISOString(),
+      source: "pal.lk + cse.lk",
+      totalMarketValue,
+      totalCost,
+      totalUnrealizedPnl,
+      totalUnrealizedPnlPct,
+      count: updatedHoldings.length,
+      holdings: updatedHoldings,
+    };
+
+    await savePalHoldings(refreshedPayload);
+    return refreshedPayload;
+  } catch (err) {
+    console.warn("Error refreshing PAL holdings from CSE:", err);
+    return existing;
+  }
+}
+
 export async function getSolarTelemetry(): Promise<any | null> {
   // 1. Try Upstash KV first for fastest zero-latency persistence
   try {
