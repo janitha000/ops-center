@@ -78,6 +78,24 @@ export function DailyHorizonSection({
         // ignore
       }
     });
+
+    fetch("/api/ops/tasks", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled || !json?.success || !Array.isArray(json.tasks) || json.tasks.length === 0) {
+          return;
+        }
+        setTasks(json.tasks);
+        try {
+          localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(json.tasks));
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {
+        // fallback to localStorage
+      });
+
     return () => {
       cancelled = true;
     };
@@ -90,6 +108,13 @@ export function DailyHorizonSection({
     } catch {
       // ignore
     }
+    fetch("/api/ops/tasks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: next }),
+    }).catch(() => {
+      // ignore offline save error
+    });
   };
 
   const handleCycleTask = (id: string) => {

@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { createClient } from "@vercel/kv";
-import { MaturityRadarItem } from "../types";
+import { MaturityRadarItem, SprintTask } from "../types";
 
 const kvUrl = process.env.KV_REST_API_URL || "https://powerful-catfish-86904.upstash.io";
 const kvToken = process.env.KV_REST_API_TOKEN || "gQAAAAAAAVN4AAIncDE5NDY0ZTE2MzVjYWU0ZjA4YTU3YmZmZjc1OWZmNmYwNnAxODY5MDQ";
@@ -58,6 +58,28 @@ export async function ensureOpsSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS ops_solar_telemetry (
         id INTEGER PRIMARY KEY DEFAULT 1,
         data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS ops_decision_acks (
+        signal_id TEXT PRIMARY KEY,
+        horizon TEXT NOT NULL,
+        ack_count INTEGER NOT NULL DEFAULT 1,
+        ack_date TEXT,
+        ack_month TEXT,
+        ack_forever BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS ops_sprint_tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        status TEXT NOT NULL,
+        deadline TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `;
@@ -478,5 +500,234 @@ export async function saveStockMinPrices(prices: Record<string, number>): Promis
     `;
   } catch (err) {
     console.warn("Error saving stock min prices to Postgres:", err);
+  }
+}
+
+// ── Decision Acknowledgements (Daily / Monthly / Forever) ──────────────────────
+
+export type DecisionAckRecord = {
+  signalId: string;
+  horizon: "live" | "daily" | "monthly";
+  ackCount: number;
+  ackDate: string | null;
+  ackMonth: string | null;
+  ackForever: boolean;
+  isCurrentlySuppressed: boolean;
+  canAckForever: boolean;
+};
+
+function getSltTodayAndMonth() {
+  const slt = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const currentMonth = `${slt.getUTCFullYear()}-${String(slt.getUTCMonth() + 1).padStart(2, "0")}`;
+  const todayIso = `${currentMonth}-${String(slt.getUTCDate()).padStart(2, "0")}`;
+  return { todayIso, currentMonth };
+}
+
+const memoryDecisionAcks = new Map<string, Omit<DecisionAckRecord, "isCurrentlySuppressed" | "canAckForever">>();
+
+function enrichAckRecord(
+  rec: Omit<DecisionAckRecord, "isCurrentlySuppressed" | "canAckForever">,
+  todayIso: string,
+  currentMonth: string
+): DecisionAckRecord {
+  const isSuppressed =
+    rec.horizon === "daily"
+      ? rec.ackForever || rec.ackDate === todayIso
+      : rec.horizon === "monthly"
+      ? rec.ackMonth === currentMonth
+      : rec.ackDate === todayIso;
+
+  const canAckForever = rec.horizon === "daily" && rec.ackCount >= 3;
+
+  return {
+    ...rec,
+    isCurrentlySuppressed: isSuppressed,
+    canAckForever,
+  };
+}
+
+export async function getDecisionAckRecords(): Promise<DecisionAckRecord[]> {
+  const { todayIso, currentMonth } = getSltTodayAndMonth();
+  const sql = getSql();
+
+  if (sql) {
+    try {
+      await ensureOpsSchema();
+      const rows = await sql`
+        SELECT signal_id, horizon, ack_count, ack_date, ack_month, ack_forever
+        FROM ops_decision_acks
+      `;
+      return rows.map((r) =>
+        enrichAckRecord(
+          {
+            signalId: String(r.signal_id),
+            horizon: (String(r.horizon) as "live" | "daily" | "monthly") || "daily",
+            ackCount: Number(r.ack_count || 0),
+            ackDate: r.ack_date ? String(r.ack_date) : null,
+            ackMonth: r.ack_month ? String(r.ack_month) : null,
+            ackForever: Boolean(r.ack_forever) && String(r.horizon) === "daily",
+          },
+          todayIso,
+          currentMonth
+        )
+      );
+    } catch (err) {
+      console.warn("Error reading decision acks from Postgres:", err);
+    }
+  }
+
+  try {
+    const kvList = await kv.get<Array<Omit<DecisionAckRecord, "isCurrentlySuppressed" | "canAckForever">>>("ops_decision_acks_v1");
+    if (Array.isArray(kvList)) {
+      return kvList.map((r) => enrichAckRecord(r, todayIso, currentMonth));
+    }
+  } catch {}
+
+  return Array.from(memoryDecisionAcks.values()).map((r) => enrichAckRecord(r, todayIso, currentMonth));
+}
+
+export async function acknowledgeDecision(
+  signalId: string,
+  horizon: "live" | "daily" | "monthly",
+  mode: "period" | "forever" = "period"
+): Promise<DecisionAckRecord[]> {
+  const { todayIso, currentMonth } = getSltTodayAndMonth();
+  const existingList = await getDecisionAckRecords();
+  const existing = existingList.find((r) => r.signalId === signalId);
+
+  const nextCount = (existing?.ackCount ?? 0) + 1;
+  const allowForever = horizon === "daily" && mode === "forever" && (existing?.ackCount ?? 0) >= 3;
+
+  const nextRec: Omit<DecisionAckRecord, "isCurrentlySuppressed" | "canAckForever"> = {
+    signalId,
+    horizon,
+    ackCount: allowForever ? existing?.ackCount ?? nextCount : nextCount,
+    ackDate: horizon === "monthly" ? null : todayIso,
+    ackMonth: horizon === "monthly" ? currentMonth : null,
+    ackForever: allowForever,
+  };
+
+  memoryDecisionAcks.set(signalId, nextRec);
+
+  const sql = getSql();
+  if (sql) {
+    try {
+      await ensureOpsSchema();
+      await sql`
+        INSERT INTO ops_decision_acks (signal_id, horizon, ack_count, ack_date, ack_month, ack_forever, updated_at)
+        VALUES (${nextRec.signalId}, ${nextRec.horizon}, ${nextRec.ackCount}, ${nextRec.ackDate}, ${nextRec.ackMonth}, ${nextRec.ackForever}, NOW())
+        ON CONFLICT (signal_id) DO UPDATE SET
+          horizon = EXCLUDED.horizon,
+          ack_count = EXCLUDED.ack_count,
+          ack_date = EXCLUDED.ack_date,
+          ack_month = EXCLUDED.ack_month,
+          ack_forever = EXCLUDED.ack_forever,
+          updated_at = NOW();
+      `;
+    } catch (err) {
+      console.warn("Error saving decision ack to Postgres:", err);
+    }
+  }
+
+  try {
+    const merged = existingList.filter((r) => r.signalId !== signalId).map(({ isCurrentlySuppressed: _s, canAckForever: _c, ...rest }) => rest);
+    merged.push(nextRec);
+    await kv.set("ops_decision_acks_v1", merged);
+  } catch {}
+
+  return getDecisionAckRecords();
+}
+
+export async function resetActiveDecisionAcks(): Promise<DecisionAckRecord[]> {
+  for (const [k, v] of memoryDecisionAcks.entries()) {
+    memoryDecisionAcks.set(k, { ...v, ackDate: null, ackMonth: null, ackForever: false });
+  }
+
+  const sql = getSql();
+  if (sql) {
+    try {
+      await ensureOpsSchema();
+      await sql`
+        UPDATE ops_decision_acks
+        SET ack_date = NULL, ack_month = NULL, ack_forever = FALSE, updated_at = NOW()
+      `;
+    } catch (err) {
+      console.warn("Error resetting decision acks in Postgres:", err);
+    }
+  }
+
+  try {
+    const kvList = await kv.get<Array<Omit<DecisionAckRecord, "isCurrentlySuppressed" | "canAckForever">>>("ops_decision_acks_v1");
+    if (Array.isArray(kvList)) {
+      await kv.set(
+        "ops_decision_acks_v1",
+        kvList.map((r) => ({ ...r, ackDate: null, ackMonth: null, ackForever: false }))
+      );
+    }
+  } catch {}
+
+  return getDecisionAckRecords();
+}
+
+// ── Daily Critical Path Sprint Tasks ─────────────────────────────────────────
+
+let memorySprintTasks: SprintTask[] | null = null;
+
+export async function getSavedSprintTasks(): Promise<SprintTask[] | null> {
+  const sql = getSql();
+  if (sql) {
+    try {
+      await ensureOpsSchema();
+      const rows = await sql`
+        SELECT id, title, domain, status, deadline
+        FROM ops_sprint_tasks
+        ORDER BY sort_order ASC, updated_at DESC
+      `;
+      if (rows.length > 0) {
+        return rows.map((r) => ({
+          id: String(r.id),
+          title: String(r.title),
+          domain: (String(r.domain) as SprintTask["domain"]) || "OPS",
+          status: (String(r.status) as SprintTask["status"]) || "active",
+          deadline: r.deadline ? String(r.deadline) : undefined,
+        }));
+      }
+    } catch (err) {
+      console.warn("Error reading sprint tasks from Postgres:", err);
+    }
+  }
+
+  try {
+    const kvTasks = await kv.get<SprintTask[]>("ops_sprint_tasks_v1");
+    if (Array.isArray(kvTasks) && kvTasks.length > 0) {
+      return kvTasks;
+    }
+  } catch {}
+
+  return memorySprintTasks;
+}
+
+export async function saveSprintTasks(tasks: SprintTask[]): Promise<void> {
+  memorySprintTasks = tasks;
+
+  try {
+    await kv.set("ops_sprint_tasks_v1", tasks);
+  } catch {}
+
+  const sql = getSql();
+  if (!sql) return;
+
+  try {
+    await ensureOpsSchema();
+    await sql`DELETE FROM ops_sprint_tasks`;
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      await sql`
+        INSERT INTO ops_sprint_tasks (id, title, domain, status, deadline, sort_order, updated_at)
+        VALUES (${t.id}, ${t.title}, ${t.domain}, ${t.status}, ${t.deadline ?? null}, ${idx}, NOW())
+      `;
+    }
+  } catch (err) {
+    console.warn("Error saving sprint tasks to Postgres:", err);
   }
 }

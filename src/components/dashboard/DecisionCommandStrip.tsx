@@ -26,7 +26,25 @@ interface DecisionCommandStripProps {
   zoneRefreshing?: Record<string, boolean>;
 }
 
-const ACK_STORAGE_KEY = "lifeops_ack_decisions_v1";
+const ACK_STORAGE_KEY = "lifeops_ack_decisions_v2";
+
+interface AckRecord {
+  signalId: string;
+  horizon: DecisionHorizon;
+  ackCount: number;
+  ackDate: string | null;
+  ackMonth: string | null;
+  ackForever: boolean;
+  isCurrentlySuppressed: boolean;
+  canAckForever: boolean;
+}
+
+function getSltTodayAndMonth() {
+  const slt = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const currentMonth = `${slt.getUTCFullYear()}-${String(slt.getUTCMonth() + 1).padStart(2, "0")}`;
+  const todayIso = `${currentMonth}-${String(slt.getUTCDate()).padStart(2, "0")}`;
+  return { todayIso, currentMonth };
+}
 
 const HORIZON_BADGE_STYLES: Record<DecisionHorizon, string> = {
   live: "bg-rose-950/90 text-rose-300 border-rose-700/80",
@@ -56,7 +74,7 @@ export function DecisionCommandStrip({
   zoneRefreshing = {},
 }: DecisionCommandStripProps) {
   const [internalFilter, setInternalFilter] = useState<"all" | DecisionHorizon>("all");
-  const [ackIds, setAckIds] = useState<string[]>([]);
+  const [ackRecords, setAckRecords] = useState<Record<string, AckRecord>>({});
   const [showAll, setShowAll] = useState(false);
 
   const activeFilter = controlledFilter ?? internalFilter;
@@ -73,21 +91,41 @@ export function DecisionCommandStrip({
         const raw = localStorage.getItem(ACK_STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            setAckIds(parsed);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            setAckRecords(parsed);
           }
         }
       } catch {
         // ignore localStorage read errors
       }
     });
+
+    fetch("/api/ops/acks", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled || !json?.success || !Array.isArray(json.records)) return;
+        const map: Record<string, AckRecord> = {};
+        for (const rec of json.records as AckRecord[]) {
+          map[rec.signalId] = rec;
+        }
+        setAckRecords(map);
+        try {
+          localStorage.setItem(ACK_STORAGE_KEY, JSON.stringify(map));
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {
+        // offline fallback uses localStorage cache
+      });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const persistAckIds = (next: string[]) => {
-    setAckIds(next);
+  const persistMap = (next: Record<string, AckRecord>) => {
+    setAckRecords(next);
     try {
       localStorage.setItem(ACK_STORAGE_KEY, JSON.stringify(next));
     } catch {
@@ -95,14 +133,67 @@ export function DecisionCommandStrip({
     }
   };
 
-  const handleAcknowledge = (id: string) => {
-    if (!ackIds.includes(id)) {
-      persistAckIds([...ackIds, id]);
+  const handleAcknowledge = async (
+    signal: DecisionSignal,
+    mode: "period" | "forever" = "period"
+  ) => {
+    const { todayIso, currentMonth } = getSltTodayAndMonth();
+    const existing = ackRecords[signal.id];
+    const nextCount = (existing?.ackCount ?? 0) + 1;
+    const allowForever =
+      signal.horizon === "daily" && mode === "forever" && (existing?.ackCount ?? 0) >= 3;
+
+    const optimistic: AckRecord = {
+      signalId: signal.id,
+      horizon: signal.horizon,
+      ackCount: allowForever ? existing?.ackCount ?? nextCount : nextCount,
+      ackDate: signal.horizon === "monthly" ? null : todayIso,
+      ackMonth: signal.horizon === "monthly" ? currentMonth : null,
+      ackForever: allowForever,
+      isCurrentlySuppressed: true,
+      canAckForever: signal.horizon === "daily" && nextCount >= 3,
+    };
+    persistMap({ ...ackRecords, [signal.id]: optimistic });
+
+    try {
+      const res = await fetch("/api/ops/acks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signalId: signal.id, horizon: signal.horizon, mode }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.records)) {
+          const map: Record<string, AckRecord> = {};
+          for (const rec of json.records as AckRecord[]) {
+            map[rec.signalId] = rec;
+          }
+          persistMap(map);
+        }
+      }
+    } catch {
+      // optimistic state kept in localStorage
     }
   };
 
-  const handleResetAck = () => {
-    persistAckIds([]);
+  const handleResetAck = async () => {
+    const cleared: Record<string, AckRecord> = {};
+    for (const [id, rec] of Object.entries(ackRecords)) {
+      cleared[id] = {
+        ...rec,
+        ackDate: null,
+        ackMonth: null,
+        ackForever: false,
+        isCurrentlySuppressed: false,
+      };
+    }
+    persistMap(cleared);
+
+    try {
+      await fetch("/api/ops/acks", { method: "DELETE" });
+    } catch {
+      // ignore
+    }
   };
 
   const pool = useMemo(() => {
@@ -110,10 +201,20 @@ export function DecisionCommandStrip({
     return decisions.byHorizon[activeFilter] || [];
   }, [decisions, activeFilter]);
 
-  const unacknowledged = useMemo(
-    () => pool.filter((s) => !ackIds.includes(s.id)),
-    [pool, ackIds]
-  );
+  const unacknowledged = useMemo(() => {
+    const { todayIso, currentMonth } = getSltTodayAndMonth();
+    return pool.filter((s) => {
+      const rec = ackRecords[s.id];
+      if (!rec) return true;
+      if (rec.horizon === "daily") {
+        return !(rec.ackForever || rec.ackDate === todayIso);
+      }
+      if (rec.horizon === "monthly") {
+        return rec.ackMonth !== currentMonth;
+      }
+      return rec.ackDate !== todayIso;
+    });
+  }, [pool, ackRecords]);
 
   const ackCountInPool = pool.length - unacknowledged.length;
   const visibleSignals = showAll ? unacknowledged : unacknowledged.slice(0, 6);
@@ -323,13 +424,27 @@ export function DecisionCommandStrip({
                     )}
 
                     <button
-                      onClick={() => handleAcknowledge(sig.id)}
+                      onClick={() => handleAcknowledge(sig, "period")}
                       className="px-2 py-1 rounded-sm bg-[#0d1117] hover:bg-[#161b22] border border-[#1e2633] text-slate-300 hover:text-emerald-300 font-bold flex items-center gap-1 transition-colors"
-                      title="Acknowledge & dismiss this signal"
+                      title={
+                        sig.horizon === "monthly"
+                          ? "Ignore for the rest of this month"
+                          : "Ignore for today only"
+                      }
                     >
                       <Check className="h-2.5 w-2.5" />
-                      <span>ACK</span>
+                      <span>{sig.horizon === "monthly" ? "ACK MONTH" : "ACK TODAY"}</span>
                     </button>
+
+                    {sig.horizon === "daily" && ackRecords[sig.id]?.canAckForever && (
+                      <button
+                        onClick={() => handleAcknowledge(sig, "forever")}
+                        className="px-2 py-1 rounded-sm bg-rose-950/70 hover:bg-rose-900/80 border border-rose-700/70 text-rose-200 font-bold transition-colors"
+                        title={`Acknowledged ${ackRecords[sig.id].ackCount} times — click to ignore forever`}
+                      >
+                        ∞ FOREVER
+                      </button>
+                    )}
                   </div>
                 </div>
               );

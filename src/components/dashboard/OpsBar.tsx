@@ -74,39 +74,67 @@ export function OpsBar({
   const [isBotPaused, setIsBotPaused] = useState(false);
   const [activeAlertIndex, setActiveAlertIndex] = useState(0);
 
-  // Load persisted tasks from localStorage on client mount
+  // Load persisted tasks from localStorage & DB on client mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("lifeops_sprint_tasks");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setTasks(parsed);
+    let cancelled = false;
+
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      try {
+        const saved = localStorage.getItem("lifeops_sprint_tasks");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setTasks(parsed);
+          }
         }
+      } catch {
+        // fallback
       }
-    } catch {
-      // fallback
-    }
+    });
+
+    fetch("/api/ops/tasks", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.success && Array.isArray(json.tasks) && json.tasks.length > 0) {
+          setTasks(json.tasks);
+          try {
+            localStorage.setItem("lifeops_sprint_tasks", JSON.stringify(json.tasks));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Sync tasks to localStorage
-  useEffect(() => {
+  // Sync tasks to localStorage & DB
+  const persistTasks = (next: SprintTask[]) => {
+    setTasks(next);
     try {
-      localStorage.setItem("lifeops_sprint_tasks", JSON.stringify(tasks));
+      localStorage.setItem("lifeops_sprint_tasks", JSON.stringify(next));
     } catch {
       // ignore
     }
-  }, [tasks]);
+    fetch("/api/ops/tasks", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks: next }),
+    }).catch(() => {});
+  };
 
   // Cycle task status: queued -> active -> complete -> queued
   const handleCycleTask = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.id !== id) return t;
-        const nextStatus = t.status === "queued" ? "active" : t.status === "active" ? "complete" : "queued";
-        return { ...t, status: nextStatus };
-      })
-    );
+    const next = tasks.map((t) => {
+      if (t.id !== id) return t;
+      const nextStatus: SprintTask["status"] =
+        t.status === "queued" ? "active" : t.status === "active" ? "complete" : "queued";
+      return { ...t, status: nextStatus };
+    });
+    persistTasks(next);
   };
 
   const handleAddTask = (e: React.FormEvent) => {
@@ -119,14 +147,14 @@ export function OpsBar({
       status: "active",
       deadline: newTaskDeadline || "Today",
     };
-    setTasks((prev) => [newTask, ...prev]);
+    persistTasks([newTask, ...tasks]);
     setNewTaskTitle("");
     setIsAddingTask(false);
   };
 
   const handleDeleteTask = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    persistTasks(tasks.filter((t) => t.id !== id));
   };
 
   // ── DYNAMIC TACTICAL ALERTS COMPILATION ──
