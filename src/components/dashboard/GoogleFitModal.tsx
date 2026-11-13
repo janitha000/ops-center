@@ -28,9 +28,7 @@ export function GoogleFitModal({
   const [clientSecret, setClientSecret] = useState("");
   const [hasClientSecret, setHasClientSecret] = useState(false);
   const [redirectUri, setRedirectUri] = useState("https://ops-center-psi.vercel.app/api/ops/biometrics/google-fit/callback");
-  const [weightInput, setWeightInput] = useState(String(currentWeightKg));
   const [targetWeightInput, setTargetWeightInput] = useState(String(targetWeightKg));
-  const [expendedInput, setExpendedInput] = useState(String(currentCaloriesExpended));
   const [targetExpendedInput, setTargetExpendedInput] = useState(String(targetCaloriesExpended));
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,9 +37,7 @@ export function GoogleFitModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setWeightInput(String(currentWeightKg));
     setTargetWeightInput(String(targetWeightKg));
-    setExpendedInput(String(currentCaloriesExpended));
     setTargetExpendedInput(String(targetCaloriesExpended));
     setStatusMsg(null);
 
@@ -53,7 +49,7 @@ export function GoogleFitModal({
         if (data.redirectUri) setRedirectUri(data.redirectUri);
       })
       .catch(() => {});
-  }, [isOpen, currentWeightKg, targetWeightKg, currentCaloriesExpended, targetCaloriesExpended]);
+  }, [isOpen, targetWeightKg, targetCaloriesExpended]);
 
   if (!isOpen) return null;
 
@@ -73,12 +69,9 @@ export function GoogleFitModal({
 
     try {
       const payload: Record<string, any> = {
-        targetWeightKg: parseFloat(targetWeightInput) || 72.0,
+        targetWeightKg: parseFloat(targetWeightInput) || 75.0,
         targetCaloriesExpended: parseInt(targetExpendedInput, 10) || 2200,
-        dailyEntry: {
-          weightKg: parseFloat(weightInput) || currentWeightKg,
-          caloriesExpended: parseInt(expendedInput, 10) || currentCaloriesExpended,
-        },
+        clearOverrides: true,
       };
 
       if (clientId.trim()) payload.clientId = clientId.trim();
@@ -148,6 +141,22 @@ export function GoogleFitModal({
         </div>
 
         <div className="p-4 space-y-4 max-h-[82vh] overflow-y-auto text-[11px]">
+          {/* Live Readout Box */}
+          <div className="bg-[#041d1b] border border-[#0d3b38] rounded p-2.5 flex items-center justify-between">
+            <div>
+              <span className="block text-[9px] uppercase text-slate-400">Live Google Fit Weight</span>
+              <span className="text-sm font-bold text-white">
+                {currentWeightKg > 0 ? `${currentWeightKg.toFixed(1)} kg` : "No reading today"}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="block text-[9px] uppercase text-slate-400">Live Today Expenditure</span>
+              <span className="text-sm font-bold text-amber-300">
+                {currentCaloriesExpended.toLocaleString()} kcal
+              </span>
+            </div>
+          </div>
+
           {/* Section 1: Google Cloud OAuth 2.0 Credentials (Approach A) */}
           <div className="bg-[#020b0a] border border-[#0d3b38] rounded p-3 space-y-2.5">
             <div className="flex items-center justify-between">
@@ -212,26 +221,14 @@ export function GoogleFitModal({
             </button>
           </div>
 
-          {/* Section 2: Today's Weight & Expenditure + Targets */}
+          {/* Section 2: Targets */}
           <div className="bg-[#020b0a] border border-[#0d3b38] rounded p-3 space-y-2.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
               <Flame className="h-3.5 w-3.5" />
-              2. Today&apos;s Telemetry &amp; Targets
+              2. Biometric Targets
             </span>
 
             <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[9px] uppercase text-slate-400 mb-1">
-                  Today Weight (kg)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={weightInput}
-                  onChange={(e) => setWeightInput(e.target.value)}
-                  className="w-full bg-[#041816] border border-[#0d3b38] focus:border-teal-400 rounded px-2.5 py-1.5 text-teal-300 font-bold text-xs outline-none"
-                />
-              </div>
               <div>
                 <label className="block text-[9px] uppercase text-slate-400 mb-1">
                   Target Weight (kg)
@@ -242,18 +239,6 @@ export function GoogleFitModal({
                   value={targetWeightInput}
                   onChange={(e) => setTargetWeightInput(e.target.value)}
                   className="w-full bg-[#041816] border border-[#0d3b38] focus:border-teal-400 rounded px-2.5 py-1.5 text-slate-200 text-xs outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[9px] uppercase text-slate-400 mb-1">
-                  Today Expenditure (kcal)
-                </label>
-                <input
-                  type="number"
-                  step="10"
-                  value={expendedInput}
-                  onChange={(e) => setExpendedInput(e.target.value)}
-                  className="w-full bg-[#041816] border border-[#0d3b38] focus:border-teal-400 rounded px-2.5 py-1.5 text-amber-300 font-bold text-xs outline-none"
                 />
               </div>
               <div>
@@ -293,7 +278,7 @@ export function GoogleFitModal({
             disabled={saving}
             className="px-3.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase font-bold shadow-[0_0_10px_rgba(16,185,129,0.3)] disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save Telemetry"}
+            {saving ? "Saving..." : "Save Targets"}
           </button>
         </div>
       </div>

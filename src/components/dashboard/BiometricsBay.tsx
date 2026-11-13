@@ -78,14 +78,17 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
 
   const googleFitConnected = biometrics?.googleFitConnected ?? false;
   const monthHistory = biometrics?.monthHistory ?? [];
-  const activeHistoryDays = monthHistory.filter((d) => d.day <= currentDay && d.weightKg !== null);
-  const avgDailyCaloriesExpended = biometrics?.avgDailyCaloriesExpended ?? 2180;
+  const weightHistoryDays = monthHistory.filter((d) => d.day <= currentDay && d.weightKg !== null);
+  const logHistoryDays = monthHistory.filter(
+    (d) => d.day <= currentDay && (d.weightKg !== null || d.caloriesExpended > 0)
+  );
+  const avgDailyCaloriesExpended = biometrics?.avgDailyCaloriesExpended ?? 0;
   const mtdCaloriesExpended = biometrics?.mtdCaloriesExpended ?? avgDailyCaloriesExpended * currentDay;
 
   // Compute min/max for dynamic scaling in Month View Weight chart
-  const weightValues = activeHistoryDays.map((d) => d.weightKg as number);
-  const minWeight = weightValues.length > 0 ? Math.min(...weightValues, targetWeightKg) - 0.5 : 71.5;
-  const maxWeight = weightValues.length > 0 ? Math.max(...weightValues) + 0.5 : 77.0;
+  const weightValues = weightHistoryDays.map((d) => d.weightKg as number);
+  const minWeight = weightValues.length > 0 ? Math.min(...weightValues, targetWeightKg) - 1.0 : 70.0;
+  const maxWeight = weightValues.length > 0 ? Math.max(...weightValues) + 1.0 : 85.0;
   const weightRange = Math.max(1, maxWeight - minWeight);
 
   return (
@@ -515,8 +518,8 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
               </div>
 
               <div className="divide-y divide-[#0d3b38]/60 text-[9.5px] max-h-28 overflow-y-auto">
-                {activeHistoryDays
-                  .slice(-5)
+                {logHistoryDays
+                  .slice(-7)
                   .reverse()
                   .map((d) => {
                     const netDay = (today.calories || 1487) - d.caloriesExpended;

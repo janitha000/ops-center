@@ -8,6 +8,23 @@ const kv = createClient({ url: kvUrl, token: kvToken });
 const KV_CONFIG_KEY = "ops_google_fit_config_v1";
 const KV_TELEMETRY_KEY = "ops_google_fit_telemetry_v1";
 
+// Sri Lanka Standard Time offset: UTC+05:30 (19,800,000 ms)
+const SLT_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function getSltDateParts(epochMs = Date.now()) {
+  const slt = new Date(epochMs + SLT_OFFSET_MS);
+  const year = slt.getUTCFullYear();
+  const monthIdx = slt.getUTCMonth(); // 0-based
+  const day = slt.getUTCDate();
+  const isoDate = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const monthShort = slt.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return { year, monthIdx, day, isoDate, monthShort };
+}
+
+function getSltMidnightUtcMs(year: number, monthIdx: number, day: number): number {
+  return Date.UTC(year, monthIdx, day, 0, 0, 0, 0) - SLT_OFFSET_MS;
+}
+
 export type GoogleFitConfig = {
   clientId?: string;
   clientSecret?: string;
@@ -27,7 +44,6 @@ export type GoogleFitConfig = {
 };
 
 let memoryConfig: GoogleFitConfig = {};
-let memoryTelemetry: BiometricTelemetry | null = null;
 
 export async function getGoogleFitConfig(): Promise<GoogleFitConfig> {
   try {
@@ -56,10 +72,10 @@ export async function saveGoogleFitConfig(partial: Partial<GoogleFitConfig>): Pr
   const merged: GoogleFitConfig = {
     ...existing,
     ...partial,
-    manualDailyOverrides: {
-      ...(existing.manualDailyOverrides || {}),
-      ...(partial.manualDailyOverrides || {}),
-    },
+    manualDailyOverrides:
+      partial.manualDailyOverrides !== undefined
+        ? partial.manualDailyOverrides
+        : existing.manualDailyOverrides || {},
     updatedAt: new Date().toISOString(),
   };
   memoryConfig = merged;
@@ -127,10 +143,12 @@ export async function exchangeGoogleFitCode(code: string, origin: string): Promi
       return { ok: false, error: data.error_description || data.error || "Token exchange failed" };
     }
 
+    // Clear any stale manual overrides when freshly linking Google Fit OAuth
     await saveGoogleFitConfig({
       accessToken: data.access_token,
       refreshToken: data.refresh_token || cfg.refreshToken,
       expiresAt: Date.now() + Number(data.expires_in || 3500) * 1000,
+      manualDailyOverrides: {},
     });
 
     return { ok: true };
@@ -177,44 +195,23 @@ async function getValidGoogleAccessToken(cfg: GoogleFitConfig): Promise<string |
   }
 }
 
-const DEFAULT_PAST_BIOMETRICS: Array<{ weightKg: number; caloriesExpended: number }> = [
-  { weightKg: 76.4, caloriesExpended: 2180 },
-  { weightKg: 76.3, caloriesExpended: 2240 },
-  { weightKg: 76.1, caloriesExpended: 2090 },
-  { weightKg: 76.2, caloriesExpended: 2310 },
-  { weightKg: 76.0, caloriesExpended: 2150 },
-  { weightKg: 75.9, caloriesExpended: 1980 },
-  { weightKg: 75.8, caloriesExpended: 2290 },
-  { weightKg: 75.7, caloriesExpended: 2120 },
-  { weightKg: 75.6, caloriesExpended: 2210 },
-  { weightKg: 75.5, caloriesExpended: 2170 },
-  { weightKg: 75.4, caloriesExpended: 2260 },
-  { weightKg: 75.3, caloriesExpended: 2190 },
-  { weightKg: 75.2, caloriesExpended: 2140 },
-];
-
 export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
   const cfg = await getGoogleFitConfig();
-  const now = new Date();
-  const year = now.getFullYear();
-  const monthIdx = now.getMonth();
-  const currentDay = now.getDate();
-  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
-  const monthShort = now.toLocaleString("en-US", { month: "short" });
+  const nowMs = Date.now();
+  const { year, monthIdx, day: currentDay, monthShort } = getSltDateParts(nowMs);
+  const daysInMonth = new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
 
-  const targetWeightKg = cfg.targetWeightKg || 72.0;
+  const targetWeightKg = cfg.targetWeightKg || 75.0;
   const targetCaloriesExpended = cfg.targetCaloriesExpended || 2200;
   const overrides = cfg.manualDailyOverrides || {};
 
-  // 1. If connected to Google Fit, query Google Fitness REST API
+  // 1. Query Google Fit REST API with exact Sri Lanka Time (UTC+05:30) 24-hour day buckets
   const accessToken = await getValidGoogleAccessToken(cfg);
   if (accessToken) {
     try {
-      const startOfMonth = new Date(year, monthIdx, 1, 0, 0, 0, 0).getTime();
-      const endOfToday = new Date(year, monthIdx, currentDay, 23, 59, 59, 999).getTime();
-
-      // Also look back 14 days prior to month start to have a carry-forward weight if day 1 had no weigh-in
-      const lookbackStart = startOfMonth - 14 * 86400_000;
+      const startOfMonthMs = getSltMidnightUtcMs(year, monthIdx, 1);
+      const endOfTodayMs = getSltMidnightUtcMs(year, monthIdx, currentDay + 1) - 1;
+      const lookbackStartMs = startOfMonthMs - 14 * 86400_000;
 
       const res = await fetch("https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate", {
         method: "POST",
@@ -228,8 +225,8 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
             { dataTypeName: "com.google.calories.expended" },
           ],
           bucketByTime: { durationMillis: 86400_000 },
-          startTimeMillis: lookbackStart,
-          endTimeMillis: endOfToday,
+          startTimeMillis: lookbackStartMs,
+          endTimeMillis: endOfTodayMs,
         }),
         cache: "no-store",
       });
@@ -239,12 +236,11 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
         const buckets: any[] = json.bucket || [];
 
         const dailyMap = new Map<string, { weightKg: number | null; caloriesExpended: number }>();
-        let lastKnownWeightKg: number | null = null;
+        let latestWeightOverall: number | null = null;
 
         for (const b of buckets) {
           const startMs = Number(b.startTimeMillis || 0);
-          const d = new Date(startMs);
-          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const { isoDate } = getSltDateParts(startMs);
 
           let weightVal: number | null = null;
           let calExpVal = 0;
@@ -264,19 +260,19 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
           }
 
           if (weightVal !== null) {
-            lastKnownWeightKg = weightVal;
+            latestWeightOverall = weightVal;
           }
 
-          dailyMap.set(iso, {
-            weightKg: weightVal ?? lastKnownWeightKg,
+          dailyMap.set(isoDate, {
+            weightKg: weightVal,
             caloriesExpended: Math.round(calExpVal),
           });
         }
 
         const monthHistory: DailyBiometricHistoryPoint[] = [];
-        let rollingWeight = lastKnownWeightKg || 75.2;
+        let carryForwardWeight: number | null = null;
         let totalExpendedMtd = 0;
-        let activeDaysCount = 0;
+        let activeCalorieDaysCount = 0;
 
         for (let day = 1; day <= daysInMonth; day++) {
           const isoDate = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -290,12 +286,12 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
           if (!isFuture) {
             if (manual?.weightKg !== undefined) {
               weightKg = manual.weightKg;
-              rollingWeight = weightKg;
+              carryForwardWeight = weightKg;
             } else if (bucketData?.weightKg !== null && bucketData?.weightKg !== undefined) {
               weightKg = bucketData.weightKg;
-              rollingWeight = weightKg;
-            } else {
-              weightKg = rollingWeight;
+              carryForwardWeight = weightKg;
+            } else if (carryForwardWeight !== null) {
+              weightKg = carryForwardWeight;
             }
 
             if (manual?.caloriesExpended !== undefined) {
@@ -306,7 +302,7 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
 
             if (caloriesExpended > 0) {
               totalExpendedMtd += caloriesExpended;
-              activeDaysCount++;
+              activeCalorieDaysCount++;
             }
           }
 
@@ -320,17 +316,21 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
         }
 
         const todayEntry = monthHistory[currentDay - 1];
-        const firstEntry = monthHistory.find((m) => m.weightKg !== null);
-        const todayWeightKg = todayEntry?.weightKg || rollingWeight || 75.2;
-        const startMonthWeightKg = firstEntry?.weightKg || todayWeightKg;
-        const weightDeltaMtdKg = Number((todayWeightKg - startMonthWeightKg).toFixed(1));
-        const todayCaloriesExpended = todayEntry?.caloriesExpended || 0;
-        const avgDailyCaloriesExpended = activeDaysCount > 0 ? Math.round(totalExpendedMtd / activeDaysCount) : targetCaloriesExpended;
+        const firstLoggedWeightEntry = monthHistory.find((m) => m.weightKg !== null);
+        const todayWeightKg = todayEntry?.weightKg ?? latestWeightOverall ?? 0;
+        const startMonthWeightKg = firstLoggedWeightEntry?.weightKg ?? todayWeightKg;
+        const weightDeltaMtdKg =
+          todayWeightKg > 0 && startMonthWeightKg > 0
+            ? Number((todayWeightKg - startMonthWeightKg).toFixed(1))
+            : 0;
+        const todayCaloriesExpended = todayEntry?.caloriesExpended ?? 0;
+        const avgDailyCaloriesExpended =
+          activeCalorieDaysCount > 0 ? Math.round(totalExpendedMtd / activeCalorieDaysCount) : 0;
 
         const livePayload: BiometricTelemetry = {
           googleFitConnected: true,
           source: "google_fit",
-          lastSynced: now.toISOString(),
+          lastSynced: new Date().toISOString(),
           todayWeightKg,
           targetWeightKg,
           startMonthWeightKg,
@@ -342,7 +342,6 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
           monthHistory,
         };
 
-        memoryTelemetry = livePayload;
         kv.set(KV_TELEMETRY_KEY, livePayload).catch(() => {});
         return livePayload;
       }
@@ -351,25 +350,30 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
     }
   }
 
-  // 2. Fallback / Manual Overrides Mode (before Google Fit OAuth is completed or if token expired)
+  // 2. If not connected yet, return clean zero/override state without fake weights
   const monthHistory: DailyBiometricHistoryPoint[] = [];
   let totalExpendedMtd = 0;
-  let lastWeight = 76.4;
+  let activeDays = 0;
+  let lastWeight: number | null = null;
 
   for (let day = 1; day <= daysInMonth; day++) {
     const isoDate = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const isFuture = day > currentDay;
-    const preset = DEFAULT_PAST_BIOMETRICS[(day - 1) % DEFAULT_PAST_BIOMETRICS.length];
     const manual = overrides[isoDate];
 
     let weightKg: number | null = null;
     let caloriesExpended = 0;
 
-    if (!isFuture) {
-      weightKg = manual?.weightKg ?? preset.weightKg;
-      caloriesExpended = manual?.caloriesExpended ?? preset.caloriesExpended;
-      lastWeight = weightKg;
-      totalExpendedMtd += caloriesExpended;
+    if (!isFuture && manual) {
+      if (manual.weightKg !== undefined) {
+        weightKg = manual.weightKg;
+        lastWeight = weightKg;
+      }
+      if (manual.caloriesExpended !== undefined) {
+        caloriesExpended = manual.caloriesExpended;
+        totalExpendedMtd += caloriesExpended;
+        activeDays++;
+      }
     }
 
     monthHistory.push({
@@ -382,18 +386,17 @@ export async function fetchBiometricTelemetry(): Promise<BiometricTelemetry> {
   }
 
   const todayEntry = monthHistory[currentDay - 1];
-  const firstEntry = monthHistory[0];
-  const todayWeightKg = todayEntry?.weightKg ?? lastWeight;
-  const startMonthWeightKg = firstEntry?.weightKg ?? 76.4;
+  const firstEntry = monthHistory.find((m) => m.weightKg !== null);
+  const todayWeightKg = todayEntry?.weightKg ?? lastWeight ?? 0;
+  const startMonthWeightKg = firstEntry?.weightKg ?? todayWeightKg;
   const weightDeltaMtdKg = Number((todayWeightKg - startMonthWeightKg).toFixed(1));
-  const todayCaloriesExpended = todayEntry?.caloriesExpended ?? 2140;
-  const avgDailyCaloriesExpended = currentDay > 0 ? Math.round(totalExpendedMtd / currentDay) : 2180;
-  const hasManualOverrides = Object.keys(overrides).length > 0;
+  const todayCaloriesExpended = todayEntry?.caloriesExpended ?? 0;
+  const avgDailyCaloriesExpended = activeDays > 0 ? Math.round(totalExpendedMtd / activeDays) : 0;
 
   return {
     googleFitConnected: Boolean(cfg.refreshToken || cfg.accessToken),
-    source: hasManualOverrides ? "manual" : "fallback",
-    lastSynced: cfg.updatedAt || now.toISOString(),
+    source: Object.keys(overrides).length > 0 ? "manual" : "fallback",
+    lastSynced: cfg.updatedAt || new Date().toISOString(),
     todayWeightKg,
     targetWeightKg,
     startMonthWeightKg,

@@ -55,8 +55,9 @@ export async function POST(req: NextRequest) {
       updates.targetCaloriesExpended = body.targetCaloriesExpended;
     }
 
-    // Optional manual daily entry (today or specific date)
-    if (body.dailyEntry && typeof body.dailyEntry === "object") {
+    if (body.clearOverrides) {
+      updates.manualDailyOverrides = {};
+    } else if (body.dailyEntry && typeof body.dailyEntry === "object") {
       const now = new Date();
       const defaultIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
       const dateKey = body.dailyEntry.isoDate || defaultIso;
