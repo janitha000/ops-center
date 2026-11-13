@@ -7,6 +7,8 @@ import { fetchBinanceBotData } from "@/lib/connectors/binanceBot";
 import { getSolarTelemetry, fetchFusionSolarKioskData } from "@/lib/connectors/opsStore";
 import { OpsDashboardPayload } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 const PAST_SOLAR_WEIGHTS = [
   { day: 1, kwh: 12.4, exp: 9.2 },
   { day: 2, kwh: 14.2, exp: 10.5 },

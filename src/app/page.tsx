@@ -259,7 +259,7 @@ export default function OperationsDashboard() {
   const fetchSyncData = useCallback(async () => {
     try {
       setRefreshing(true);
-      const res = await fetch("/api/ops/sync");
+      const res = await fetch("/api/ops/sync", { cache: "no-store" });
       if (res.ok) {
         const json: OpsDashboardPayload = await res.json();
         setData(json);
@@ -276,7 +276,7 @@ export default function OperationsDashboard() {
   const handleRefreshZone = useCallback(async (zoneKey: "zone1" | "zone2" | "zone3" | "zone4" | "zone5" | "zone6") => {
     setZoneRefreshing((prev) => ({ ...prev, [zoneKey]: true }));
     try {
-      const res = await fetch(`/api/ops/sync?zone=${zoneKey}`);
+      const res = await fetch(`/api/ops/sync?zone=${zoneKey}`, { cache: "no-store" });
       if (res.ok) {
         const partial = await res.json();
         setData((prev) => (prev ? { ...prev, ...partial } : prev));
@@ -293,6 +293,17 @@ export default function OperationsDashboard() {
       fetchSyncData();
     }
   }, [isAuthenticated, fetchSyncData]);
+
+  // Auto-poll solar telemetry (zone4) every 60s while tab is visible
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        handleRefreshZone("zone4");
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, handleRefreshZone]);
 
   // Calculate live zone synchronization telemetry unconditionally at the top level
   const zoneSyncStatuses = useMemo(() => {

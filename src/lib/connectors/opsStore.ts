@@ -253,15 +253,24 @@ export async function fetchFusionSolarKioskData(token = DEFAULT_FUSIONSOLAR_KIOS
     const res = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": `https://intl.fusionsolar.huawei.com/pvmswebsite/nologin/assets/build/cloud.html`,
       },
       signal: controller.signal,
       cache: "no-store",
     });
     clearTimeout(timeout);
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`FusionSolar Kiosk HTTP ${res.status} ${res.statusText}`);
+      return null;
+    }
     const json = await res.json();
-    if (!json.data) return null;
+    if (!json?.data) {
+      console.warn("FusionSolar Kiosk empty/error payload:", json?.failCode, json?.message);
+      return null;
+    }
 
     // Huawei wraps HTML-escaped JSON inside data field
     const unescaped = json.data

@@ -108,13 +108,13 @@ export function GridFleetBay({ gridFleet, onRefresh, isRefreshing = false }: Gri
             <button
               onClick={() => setIsSolarSyncOpen(true)}
               className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-colors border flex items-center gap-1 ${
-                solar.syncedFrom === "fusionsolar"
+                solar.syncedFrom?.toLowerCase().includes("fusionsolar")
                   ? "bg-[#251705] border-amber-600/50 text-amber-300"
                   : "bg-[#180f04] hover:bg-[#251705] border-[#3a2408] text-slate-300 hover:text-amber-300"
               }`}
               title="Sync live solar generation from FusionSolar"
             >
-              <span>{solar.syncedFrom === "fusionsolar" ? "● SOLAR SYNCED" : "⇄ SOLAR SYNC"}</span>
+              <span>{solar.syncedFrom?.toLowerCase().includes("fusionsolar") ? "● SOLAR SYNCED" : "⇄ SOLAR SYNC"}</span>
               {syncTimeStr && <span className="text-[7.5px] text-slate-500 lowercase">({syncTimeStr})</span>}
             </button>
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/40">
