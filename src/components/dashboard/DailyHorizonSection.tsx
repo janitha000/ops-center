@@ -369,7 +369,7 @@ export function DailyHorizonSection({
             {/* Burn Rate Strip */}
             <div className="grid grid-cols-3 gap-1.5 mb-2 font-mono">
               <div className="bg-[#0b0602] border border-[#381a07] p-2 rounded-sm">
-                <span className="block text-[8px] text-slate-500 uppercase">Avg Daily Spend</span>
+                <span className="block text-[8px] text-slate-500 uppercase">Today&apos;s Spend</span>
                 <span className="text-xs font-bold text-amber-300">
                   {formatMoney(daily.dailySpendLkr)}
                 </span>

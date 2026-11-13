@@ -127,6 +127,7 @@ export type OutflowBreakdown = {
     oneTime: number;
     undocumentedBuffer?: number;
     baselineBudget: number;
+    todayActualSpend?: number;
     dailyAverageSpend: number;
     dailySafeBurnRate: number;
     categories: ExpenseCategoryItem[];
@@ -174,6 +175,7 @@ export type SpendIncomeData = {
   oneTimeSpend: number;
   baselineBudget: number;
   budgetUtilizationPct: number;
+  todayActualSpend?: number;
   dailyAverageSpend: number;
   dailySafeBurnRate: number;
   netCashFlow: number;

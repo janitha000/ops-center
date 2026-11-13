@@ -297,7 +297,7 @@ function computeDailySummary(
 
   const dailySpendLkr = Math.round(
     safeNum(
-      spendIncome?.dailyAverageSpend ?? spendIncome?.outflow?.household?.dailyAverageSpend
+      spendIncome?.todayActualSpend ?? spendIncome?.outflow?.household?.todayActualSpend
     )
   );
   const dailySafeBurnRateLkr = Math.round(
@@ -624,6 +624,11 @@ function computeMonthlySummary(
     baselineBudgetLkr: Math.round(
       safeNum(
         spendIncome?.baselineBudget ?? spendIncome?.outflow?.household?.baselineBudget
+      )
+    ),
+    dailyAverageSpendLkr: Math.round(
+      safeNum(
+        spendIncome?.dailyAverageSpend ?? spendIncome?.outflow?.household?.dailyAverageSpend
       )
     ),
     urgentMaturitiesCount,
@@ -1092,7 +1097,7 @@ function buildDailySignals(
       domain: "SPEND",
       severity: overRatio >= 1.25 ? "critical" : "warning",
       title: "Daily Spend Above Safe Burn Rate",
-      metricLabel: "Avg Daily Spend vs Safe Cap",
+      metricLabel: "Today's Normal Spend vs Safe Cap",
       currentValue: formatLKR(daily.dailySpendLkr),
       thresholdValue: `<= ${formatLKR(daily.dailySafeBurnRateLkr)}/day`,
       whyItMatters:
@@ -1311,7 +1316,9 @@ function buildMonthlySignals(
       domain: "SPEND",
       severity: overMtdRatio >= 1.2 ? "critical" : "warning",
       title: "MTD Spend Above Budget Pace",
-      metricLabel: `Day ${currentDay}/${daysInMonth} Normal MTD vs. Linear Cap`,
+      metricLabel: `Day ${currentDay}/${daysInMonth} Normal MTD · Avg ${formatLKR(
+        monthly.dailyAverageSpendLkr
+      )}/day`,
       currentValue: `${formatLKR(mtdNormalLoggedLkr)} (+${formatLKR(overMtdLkr)})`,
       thresholdValue: `<= ${formatLKR(expectedMtdBudgetLkr)} MTD pace`,
       whyItMatters: `Logged normal MTD spend (${formatLKR(mtdNormalLoggedLkr)}) is ${formatLKR(

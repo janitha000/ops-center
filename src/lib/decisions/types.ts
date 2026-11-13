@@ -111,6 +111,7 @@ export interface TemporalDashboardModel {
     budgetUtilizationPct: number;
     normalLivingSpendLkr: number;
     baselineBudgetLkr: number;
+    dailyAverageSpendLkr: number;
     urgentMaturitiesCount: number;
     warningMaturitiesCount: number;
     nextMaturityDays: number | null;

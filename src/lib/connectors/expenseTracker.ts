@@ -19,10 +19,11 @@ const kv = createClient({ url: kvUrl, token: kvToken });
 export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
   const expenseDbUrl = process.env.EXPENSE_DATABASE_URL;
   const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const currentDay = now.getDate();
-  const remainingDays = Math.max(1, daysInMonth - currentDay + 1);
+  const sltNow = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
+  const currentMonth = `${sltNow.getUTCFullYear()}-${String(sltNow.getUTCMonth() + 1).padStart(2, "0")}`;
+  const todayIso = `${currentMonth}-${String(sltNow.getUTCDate()).padStart(2, "0")}`;
+  const daysInMonth = new Date(sltNow.getUTCFullYear(), sltNow.getUTCMonth() + 1, 0).getUTCDate();
+  const currentDay = sltNow.getUTCDate();
   const currentFY = getCurrentFinancialYear(); // "2026/2027"
 
   const currentMonthShort = now.toLocaleString("en-US", { month: "short" }); // "Nov"
@@ -57,6 +58,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
 
   // Authoritative live defaults matching deployed Expense Tracker app
   let householdExpenses = 255100; // Normal living spend
+  let todayActualSpend = 0;       // Actual normal spend logged today
   let baselineBudget = 350000;    // Baseline budget limit
   let oneTimeSpend = 110000;      // 1-Time spikes
 
@@ -248,6 +250,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
       if (currentMonthExps.length > 0) {
         let norm = 0;
         let oneT = 0;
+        let todayNorm = 0;
         const catMap = new Map<string, ExpenseCategoryItem>();
 
         for (const e of currentMonthExps) {
@@ -257,6 +260,9 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
             oneT += amt;
           } else {
             norm += amt;
+            if (typeof e.date === "string" && e.date.startsWith(todayIso)) {
+              todayNorm += amt;
+            }
           }
 
           const baseCatId = e.category?.id || e.categoryId || "uncat";
@@ -288,6 +294,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
         }
 
         householdExpenses = norm;
+        todayActualSpend = Math.round(todayNorm);
         oneTimeSpend = oneT;
         expenseCategories = Array.from(catMap.values()).sort((a, b) => b.amount - a.amount);
         hasLiveApiData = true;
@@ -307,7 +314,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
       }
 
       const rows = await sql`
-        SELECT e.amount, e.parent_type, c.id, c.name, c.color
+        SELECT e.amount, e.parent_type, e.date, c.id, c.name, c.color
         FROM expenses e
         JOIN categories c ON e.category_id = c.id
         WHERE e.date LIKE ${currentMonth + "%"}
@@ -316,6 +323,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
       if (rows.length > 0) {
         let norm = 0;
         let oneT = 0;
+        let todayNorm = 0;
         const catMap = new Map<string, ExpenseCategoryItem>();
 
         for (const r of rows) {
@@ -324,6 +332,9 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
             oneT += amt;
           } else {
             norm += amt;
+            if (typeof r.date === "string" && r.date.startsWith(todayIso)) {
+              todayNorm += amt;
+            }
           }
 
           const existing = catMap.get(r.id);
@@ -343,6 +354,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
         }
 
         householdExpenses = norm;
+        todayActualSpend = Math.round(todayNorm);
         oneTimeSpend = oneT;
         expenseCategories = Array.from(catMap.values()).sort((a, b) => b.amount - a.amount);
       }
@@ -413,6 +425,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
       oneTime: oneTimeSpend,
       undocumentedBuffer: undocumentedExpense,
       baselineBudget,
+      todayActualSpend,
       dailyAverageSpend,
       dailySafeBurnRate,
       categories: expenseCategories,
@@ -468,6 +481,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
     oneTimeSpend,
     baselineBudget,
     budgetUtilizationPct,
+    todayActualSpend,
     dailyAverageSpend,
     dailySafeBurnRate,
     netCashFlow,
