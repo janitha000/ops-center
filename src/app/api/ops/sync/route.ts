@@ -109,8 +109,8 @@ export async function GET(req: NextRequest) {
     const solar = {
       ...solarBase,
       dailyTargetKwh: 15.0,
-      yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.85,
-      monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh ?? 111.8,
+      yearlyMwh: liveSolar?.yearlyMwh ?? solarBase.yearlyMwh ?? 3.85,
+      monthlyKwh: liveSolar?.monthlyKwh ?? solarBase.monthlyKwh ?? 111.8,
       historyMonth,
     };
 
@@ -175,8 +175,20 @@ export async function GET(req: NextRequest) {
     : 0;
 
   // 2. Food Spend vs Calorie Correlation (7-day timeline)
+  const foodCategoriesTotal = (spendIncome.categories ?? [])
+    .filter((c) => /dine out|groceries & food/i.test(c.name))
+    .reduce((sum, c) => sum + (c.amount || 0), 0);
+  const currentDayOfMonth = Math.max(1, new Date().getDate());
+  const target7dFoodSpend =
+    foodCategoriesTotal > 0
+      ? Math.round(foodCategoriesTotal * Math.min(1, 7 / Math.max(7, currentDayOfMonth)))
+      : 43800;
+  const baseWeights = [0.07, 0.07, 0.31, 0.27, 0.07, 0.14, 0.07];
+  const weightSlice = health.history7d.map((_, idx) => baseWeights[idx % baseWeights.length]);
+  const weightSum = weightSlice.reduce((s, w) => s + w, 0) || 1;
+
   const foodSpendVsCalorieCorrelation = health.history7d.map((h, idx) => {
-    const diningSpend = idx === 2 ? 14500 : idx === 3 ? 12800 : idx === 5 ? 6500 : 2500;
+    const diningSpend = Math.round((target7dFoodSpend * weightSlice[idx]) / weightSum);
     return {
       date: h.date,
       diningSpend,
@@ -209,8 +221,8 @@ export async function GET(req: NextRequest) {
     ...solarBase,
     dailyTargetKwh: 15.0,
     lastSynced: liveSolar?.lastSynced || new Date().toISOString(),
-    yearlyMwh: liveSolar?.yearlyMwh ?? (solarBase as any).yearlyMwh ?? 3.85,
-    monthlyKwh: liveSolar?.monthlyKwh ?? (solarBase as any).monthlyKwh ?? 111.8,
+    yearlyMwh: liveSolar?.yearlyMwh ?? solarBase.yearlyMwh ?? 3.85,
+    monthlyKwh: liveSolar?.monthlyKwh ?? solarBase.monthlyKwh ?? 111.8,
     historyMonth,
   };
 
@@ -235,7 +247,7 @@ export async function GET(req: NextRequest) {
     },
     sprintTasks: [
       { id: "task-1", title: "Review Commercial Bank FD rollover terms (10.25% vs T-Bill)", domain: "FIN", status: "active", deadline: "Today" },
-      { id: "task-2", title: "Verify HbA1c post-meal glycemic response & 16:8 fasting cutoff", domain: "BIO", status: "active", deadline: "11:00 AM" },
+      { id: "task-2", title: "Hit daily protein goal & close 8h eating window on schedule", domain: "BIO", status: "active", deadline: "11:00 AM" },
       { id: "task-3", title: "Schedule EV off-peak smart charging (11:00 PM - 05:00 AM)", domain: "GRID", status: "queued", deadline: "23:00" },
       { id: "task-4", title: "Audit binance-bot Bollinger reversion stop-loss proximity", domain: "OPS", status: "complete", deadline: "Done" },
     ],
