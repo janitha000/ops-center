@@ -1,3 +1,4 @@
+import nodemailer from "nodemailer";
 import { fetchCalorieCounterData } from "@/lib/connectors/calorieCounter";
 import { fetchSpendIncomeData } from "@/lib/connectors/expenseTracker";
 import { fetchFinancialBayData } from "@/lib/connectors/financialDashboard";
@@ -272,8 +273,8 @@ export async function assembleOpsDigestPayload(
 }
 
 /**
- * Sends an HTML executive digest email via Resend REST API (or mocks cleanly
- * when RESEND_API_KEY is not configured).
+ * Sends an HTML executive digest email via Resend REST API or SMTP
+ * (nodemailer), or mocks cleanly when neither is configured.
  */
 export async function sendOpsEmail({
   to,
@@ -284,16 +285,60 @@ export async function sendOpsEmail({
     to?.trim() ||
     process.env.OPS_ALERT_EMAIL ||
     process.env.NOTIFICATION_EMAIL ||
-    "janitha@example.com"
+    "janitha000@gmail.com"
   ).trim();
 
   const from =
-    process.env.EMAIL_FROM || "Life-Ops Center <onboarding@resend.dev>";
+    process.env.EMAIL_FROM ||
+    process.env.SMTP_USERNAME ||
+    "Life-Ops Center <onboarding@resend.dev>";
   const apiKey = process.env.RESEND_API_KEY?.trim();
+  const smtpHost = process.env.SMTP_HOST?.trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = process.env.SMTP_USERNAME?.trim();
+  const smtpPass = process.env.SMTP_PASSWORD?.trim();
+
+  if (!apiKey && smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from,
+        to: resolvedTo,
+        subject,
+        html,
+      });
+
+      return {
+        success: true,
+        mocked: false,
+        messageId: info.messageId || `smtp-${Date.now()}`,
+        to: resolvedTo,
+      };
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to send email via SMTP";
+      console.error("[Life-Ops Email] SMTP error:", msg);
+      return {
+        success: false,
+        mocked: false,
+        to: resolvedTo,
+        error: msg,
+      };
+    }
+  }
 
   if (!apiKey) {
     console.warn(
-      `[Life-Ops Email] RESEND_API_KEY is not configured. Mocking email delivery to ${resolvedTo} with subject "${subject}".`
+      `[Life-Ops Email] Neither RESEND_API_KEY nor SMTP_* is configured. Mocking email delivery to ${resolvedTo} with subject "${subject}".`
     );
     return {
       success: true,
