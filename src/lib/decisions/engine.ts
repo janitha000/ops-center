@@ -73,7 +73,9 @@ function getReferenceDate(timestamp?: string): Date {
 }
 
 function getReferenceHour(timestamp?: string): number {
-  return getReferenceDate(timestamp).getHours();
+  const ref = getReferenceDate(timestamp);
+  const slt = new Date(ref.getTime() + 5.5 * 60 * 60 * 1000);
+  return slt.getUTCHours();
 }
 
 function formatClockTime(iso: string | null): string {
@@ -1190,8 +1192,9 @@ function buildDailySignals(
     });
   }
 
-  // 4. Daily solar yield vs dailyTargetKwh
-  if (daily.solarDailyKwh < daily.solarDailyTargetKwh * 0.8) {
+  // 4. Daily solar yield vs dailyTargetKwh (alert only after 3:00 PM SLT)
+  const sltHour = getReferenceHour(payload.timestamp);
+  if (sltHour >= 15 && daily.solarDailyKwh < daily.solarDailyTargetKwh * 0.8) {
     signals.push({
       id: "daily-grid-solar-below-target",
       horizon: "daily",
