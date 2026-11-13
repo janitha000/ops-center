@@ -18,6 +18,13 @@ function cleanRscDate(val: string | null | undefined): string | null {
   return val.startsWith("$D") ? val.slice(2) : val;
 }
 
+interface RawCalorieMeal {
+  loggedAt?: string | null;
+  sugar?: number | string | null;
+  calories?: number | string | null;
+  type?: string | null;
+}
+
 interface ParsedDaySnapshot {
   consumedCalories: number;
   consumedProtein: number;
@@ -31,6 +38,7 @@ interface ParsedDaySnapshot {
   latestMealLoggedAt: string | null;
   yesterdayLastMealAt: string | null;
   fastBrokenMealAt: string | null;
+  mealCaloriesByCategory?: Record<string, number>;
 }
 
 async function fetchCalorieDaySnapshot(appUrl: string, isoDate: string): Promise<ParsedDaySnapshot | null> {
@@ -62,22 +70,30 @@ async function fetchCalorieDaySnapshot(appUrl: string, isoDate: string): Promise
         const rawJson = "{" + allFlight.slice(idx, endIdx);
         try {
           const props = JSON.parse(rawJson);
-          const meals = Array.isArray(props.initialMeals) ? props.initialMeals : [];
+          const meals: RawCalorieMeal[] = Array.isArray(props.initialMeals) ? props.initialMeals : [];
           const goals = props.initialGoals || {};
 
           // Sort meals chronologically to find first meal with sugar > 0 (fast broken)
           const sortedMeals = [...meals]
-            .map((m: any) => ({
+            .map((m) => ({
               ...m,
               cleanLoggedAt: cleanRscDate(m.loggedAt),
             }))
-            .filter((m: any) => m.cleanLoggedAt)
+            .filter((m): m is RawCalorieMeal & { cleanLoggedAt: string } => Boolean(m.cleanLoggedAt))
             .sort(
-              (a: any, b: any) =>
+              (a, b) =>
                 new Date(a.cleanLoggedAt).getTime() - new Date(b.cleanLoggedAt).getTime()
             );
 
-          const fastBrokenMeal = sortedMeals.find((m: any) => Number(m.sugar || 0) > 0);
+          const fastBrokenMeal = sortedMeals.find((m) => Number(m.sugar || 0) > 0);
+          const mealCaloriesByCategory: Record<string, number> = {};
+          for (const m of meals) {
+            const cat = String(m?.type || "snack").trim().toLowerCase() || "snack";
+            const cals = Math.round(Number(m?.calories || 0));
+            if (cals > 0) {
+              mealCaloriesByCategory[cat] = (mealCaloriesByCategory[cat] || 0) + cals;
+            }
+          }
 
           return {
             consumedCalories: Math.round(Number(props.consumedCalories || 0)),
@@ -92,6 +108,7 @@ async function fetchCalorieDaySnapshot(appUrl: string, isoDate: string): Promise
             latestMealLoggedAt: cleanRscDate(props.latestMealLoggedAt),
             yesterdayLastMealAt: cleanRscDate(props.yesterdayLastMealAt),
             fastBrokenMealAt: fastBrokenMeal ? fastBrokenMeal.cleanLoggedAt : null,
+            mealCaloriesByCategory,
           };
         } catch {
           // fallback to regex extraction below
@@ -230,6 +247,7 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
         streakDays: 14,
         weightKg: biometrics.todayWeightKg,
         caloriesExpended: biometrics.todayCaloriesExpended,
+        mealCaloriesByCategory: todaySnap.mealCaloriesByCategory,
       },
       biometrics,
       hba1c: {

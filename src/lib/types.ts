@@ -244,6 +244,7 @@ export type HealthData = {
     streakDays: number;
     weightKg?: number;
     caloriesExpended?: number;
+    mealCaloriesByCategory?: Record<string, number>;
   };
   biometrics?: BiometricTelemetry;
   hba1c: {

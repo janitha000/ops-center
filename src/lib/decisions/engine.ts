@@ -1063,6 +1063,66 @@ function buildDailySignals(
     });
   }
 
+  const mealCaloriesByCategory = payload.health?.today?.mealCaloriesByCategory ?? {};
+  const mealCategoryLabels: Record<string, string> = {
+    breakfast: "Breakfast",
+    lunch: "Lunch",
+    dinner: "Dinner",
+    snack: "Snacks",
+  };
+
+  for (const [cat, rawCals] of Object.entries(mealCaloriesByCategory)) {
+    const catCals = safeNum(rawCals);
+    if (catCals > 1000) {
+      const label =
+        mealCategoryLabels[cat] ?? cat.charAt(0).toUpperCase() + cat.slice(1);
+      signals.push({
+        id: `daily-bio-meal-cat-over-${cat}`,
+        horizon: "daily",
+        domain: "BIO",
+        severity: "warning",
+        title: `Heavy ${label} Intake (${catCals.toLocaleString("en-US")} kcal)`,
+        metricLabel: `${label} Calories`,
+        currentValue: `${catCals.toLocaleString("en-US")} kcal`,
+        thresholdValue: "<= 1,000 kcal / category",
+        whyItMatters: `Logging over 1,000 kcal in ${label.toLowerCase()} concentrates glycemic load and compresses remaining headroom in your ${daily.calorieLimit.toLocaleString("en-US")} kcal daily budget.`,
+        recommendedAction: `Keep remaining meals lighter and protein-focused, or add cardio to balance the ${label.toLowerCase()} load.`,
+        actionLabel: "Open Bio Bay",
+        actionType: "open_tab",
+        targetZone: "zone3",
+      });
+    }
+  }
+
+  const dinnerReserveKcal = 500;
+  const dinnerLoggedKcal = safeNum(mealCaloriesByCategory.dinner);
+  const remainingDinnerReserve = Math.max(0, dinnerReserveKcal - dinnerLoggedKcal);
+  const projectedTotalWithDinner = daily.caloriesIntake + remainingDinnerReserve;
+
+  if (
+    remainingDinnerReserve > 0 &&
+    daily.caloriesIntake <= daily.calorieLimit &&
+    projectedTotalWithDinner > daily.calorieLimit
+  ) {
+    const projectedOverage = projectedTotalWithDinner - daily.calorieLimit;
+    const remainingHeadroom = Math.max(0, daily.calorieLimit - daily.caloriesIntake);
+    signals.push({
+      id: "daily-bio-dinner-reserve-risk",
+      horizon: "daily",
+      domain: "BIO",
+      severity: "warning",
+      title: "Dinner Reserve Budget Risk",
+      metricLabel: "Projected w/ 500 kcal Dinner",
+      currentValue: `${projectedTotalWithDinner.toLocaleString("en-US")} kcal (${daily.caloriesIntake.toLocaleString("en-US")} + ${remainingDinnerReserve})`,
+      thresholdValue: `<= ${daily.calorieLimit.toLocaleString("en-US")} kcal budget`,
+      whyItMatters: `With ${daily.caloriesIntake.toLocaleString("en-US")} kcal already logged, keeping ${remainingDinnerReserve} kcal reserved for dinner projects ${projectedTotalWithDinner.toLocaleString("en-US")} kcal (+${projectedOverage.toLocaleString("en-US")} kcal over budget).`,
+      recommendedAction: `Cap dinner to ${remainingHeadroom.toLocaleString("en-US")} kcal or offset with extra cardio to protect your daily deficit.`,
+      actionLabel: "Open Bio Bay",
+      actionType: "open_tab",
+      targetZone: "zone3",
+    });
+  }
+
   if (daily.proteinGrams < daily.proteinGoal * 0.6) {
     const remainingProtein = Math.round(daily.proteinGoal - daily.proteinGrams);
     signals.push({
