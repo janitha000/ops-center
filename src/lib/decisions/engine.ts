@@ -1289,6 +1289,44 @@ function buildMonthlySignals(
     });
   }
 
+  // 2b. Monthly MTD total vs average MTD within budget (excluding 1-time spikes & 10% buffer)
+  const refDate = getReferenceDate(payload.timestamp);
+  const currentDay = refDate.getDate();
+  const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+  const mtdNormalLoggedLkr = Math.max(
+    0,
+    monthly.normalLivingSpendLkr - monthly.undocumentedBufferLkr
+  );
+  const expectedMtdBudgetLkr =
+    daysInMonth > 0 && monthly.baselineBudgetLkr > 0
+      ? Math.round((monthly.baselineBudgetLkr / daysInMonth) * currentDay)
+      : 0;
+
+  if (expectedMtdBudgetLkr > 0 && mtdNormalLoggedLkr > expectedMtdBudgetLkr) {
+    const overMtdLkr = mtdNormalLoggedLkr - expectedMtdBudgetLkr;
+    const overMtdRatio = mtdNormalLoggedLkr / expectedMtdBudgetLkr;
+    signals.push({
+      id: "monthly-spend-mtd-above-budget-pace",
+      horizon: "monthly",
+      domain: "SPEND",
+      severity: overMtdRatio >= 1.2 ? "critical" : "warning",
+      title: "MTD Spend Above Budget Pace",
+      metricLabel: `Day ${currentDay}/${daysInMonth} Normal MTD vs. Linear Cap`,
+      currentValue: `${formatLKR(mtdNormalLoggedLkr)} (+${formatLKR(overMtdLkr)})`,
+      thresholdValue: `<= ${formatLKR(expectedMtdBudgetLkr)} MTD pace`,
+      whyItMatters: `Logged normal MTD spend (${formatLKR(mtdNormalLoggedLkr)}) is ${formatLKR(
+        overMtdLkr
+      )} above the linear Day ${currentDay} allowance of your ${formatLKR(
+        monthly.baselineBudgetLkr
+      )} monthly budget.`,
+      recommendedAction:
+        "Slow discretionary categories for the next several days so MTD normal spend converges back to the linear budget curve.",
+      actionLabel: "Audit Spend",
+      actionType: "open_tab",
+      targetZone: "zone2",
+    });
+  }
+
   // 3. Overdraft drawn interest / utilization alert
   const od = payload.spendIncome?.outflow?.od;
   const odTotal = safeNum(od?.total);

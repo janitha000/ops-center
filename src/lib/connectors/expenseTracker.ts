@@ -388,8 +388,7 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
   const totalOutflow = totalTaxes + totalLoans + totalOd + vindyaExpense + totalHousehold;
 
   const dailyAverageSpend = currentDay > 0 ? Math.round(loggedNormalSpend / currentDay) : 0;
-  const remainingBudget = Math.max(0, baselineBudget - loggedNormalSpend);
-  const dailySafeBurnRate = Math.round(remainingBudget / Math.max(1, daysInMonth - currentDay));
+  const dailySafeBurnRate = daysInMonth > 0 ? Math.round(baselineBudget / daysInMonth) : 0;
   const budgetUtilizationPct = baselineBudget > 0 ? Number(((totalNormalExpense / baselineBudget) * 100).toFixed(1)) : 0;
 
   const outflow: OutflowBreakdown = {
