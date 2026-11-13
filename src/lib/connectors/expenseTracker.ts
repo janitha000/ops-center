@@ -387,8 +387,8 @@ export async function fetchSpendIncomeData(): Promise<SpendIncomeData> {
   const totalHousehold = totalNormalExpense + oneTimeSpend; // Both normal (with 10% undocumented) and one-time considered as expense
   const totalOutflow = totalTaxes + totalLoans + totalOd + vindyaExpense + totalHousehold;
 
-  const dailyAverageSpend = currentDay > 0 ? Math.round(totalHousehold / currentDay) : 0;
-  const remainingBudget = Math.max(0, baselineBudget - totalNormalExpense);
+  const dailyAverageSpend = currentDay > 0 ? Math.round(loggedNormalSpend / currentDay) : 0;
+  const remainingBudget = Math.max(0, baselineBudget - loggedNormalSpend);
   const dailySafeBurnRate = Math.round(remainingBudget / Math.max(1, daysInMonth - currentDay));
   const budgetUtilizationPct = baselineBudget > 0 ? Number(((totalNormalExpense / baselineBudget) * 100).toFixed(1)) : 0;
 
