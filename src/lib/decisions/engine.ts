@@ -953,7 +953,7 @@ function buildLiveSignals(
         actionType: "open_tab",
         targetZone: "zone1",
       });
-    } else if (unrealizedPnlPct >= 8) {
+    } else if (unrealizedPnlPct > 10) {
       signals.push({
         id: `live-fin-cse-profit-${ticker.symbol}`,
         horizon: "live",
@@ -962,7 +962,7 @@ function buildLiveSignals(
         title: `Profit-Take / Rebalance: ${ticker.symbol}`,
         metricLabel: `${ticker.symbol} Unrealized Gain`,
         currentValue: `+${unrealizedPnlPct.toFixed(2)}% (+${formatLKR(ticker.unrealizedPnl)})`,
-        thresholdValue: ">= +8.0% (clears 1.12% CSE fee)",
+        thresholdValue: "> +10.0% (clears 1.12% CSE fee)",
         whyItMatters: `${ticker.name || ticker.symbol} gain comfortably clears the 1.12% CSE sell transaction fee for tax-free capital gain harvesting.`,
         recommendedAction: `Consider trimming part of ${ticker.symbol} to lock in gains or rebalance portfolio concentration.`,
         actionLabel: "Review Equities",
