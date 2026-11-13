@@ -454,13 +454,13 @@ export function FinancialBay({
                         className={`text-xs ${priceColorClass}`}
                         title={
                           hasMin
-                            ? `Current: ${formatLKR(t.price)} | Min Target: ${formatLKR(minPrice)} (${
+                            ? `Current: Rs. ${t.price.toFixed(2)} | Min Target: Rs. ${minPrice} (${
                                 isBelowMin ? "BELOW MIN - BUY ZONE" : "ABOVE MIN"
                               })`
-                            : `Current Price: ${formatLKR(t.price)} (No min target set)`
+                            : `Current Price: Rs. ${t.price.toFixed(2)} (No min target set)`
                         }
                       >
-                        {formatLKR(t.price)}
+                        Rs. {Number.isInteger(t.price) ? t.price.toLocaleString() : t.price.toLocaleString("en-LK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       {hasMin && (
                         <span

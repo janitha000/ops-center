@@ -133,9 +133,10 @@ async function syncStocks() {
 
       const quantity = Number(h.quantity || 0);
       const costBasis = Number(h.costBasis || 0);
-      const marketValue = Number((quantity * price).toFixed(2));
-      const unrealizedGain = Number((marketValue * (1 - CSE_SELL_FEE_RATE) - costBasis).toFixed(2));
-      const pnlPercent = costBasis > 0 ? Number(((unrealizedGain / costBasis) * 100).toFixed(2)) : 0;
+      // PAL.lk defines VALUE as net sales proceeds after 1.12% CSE sell-side fees
+      const marketValue = Math.round(quantity * price * (1 - CSE_SELL_FEE_RATE));
+      const unrealizedGain = Math.round(marketValue - costBasis);
+      const pnlPercent = costBasis > 0 ? Number(((unrealizedGain / costBasis) * 100).toFixed(1)) : 0;
 
       return {
         ...h,

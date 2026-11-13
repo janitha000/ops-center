@@ -264,10 +264,11 @@ export async function refreshPalHoldingsFromCse(force = false): Promise<any | nu
 
         const quantity = Number(h.quantity || 0);
         const costBasis = Number(h.costBasis || 0);
-        const marketValue = quantity > 0 && price > 0 ? Number((quantity * price).toFixed(2)) : Number(h.marketValue || 0);
-        const netSalesProceeds = marketValue * (1 - CSE_SELL_FEE_RATE);
-        const unrealizedPnl = costBasis > 0 ? Number((netSalesProceeds - costBasis).toFixed(2)) : Number(h.unrealizedPnl || 0);
-        const pnlPercent = costBasis > 0 ? Number(((unrealizedPnl / costBasis) * 100).toFixed(2)) : Number(h.pnlPercent || 0);
+        const grossMarketValue = quantity > 0 && price > 0 ? quantity * price : Number(h.marketValue || 0);
+        // PAL.lk defines VALUE as net sales proceeds after 1.12% statutory CSE sell-side fees
+        const marketValue = quantity > 0 && price > 0 ? Math.round(grossMarketValue * (1 - CSE_SELL_FEE_RATE)) : Number(h.marketValue || 0);
+        const unrealizedPnl = costBasis > 0 ? Math.round(marketValue - costBasis) : Number(h.unrealizedPnl || 0);
+        const pnlPercent = costBasis > 0 ? Number(((unrealizedPnl / costBasis) * 100).toFixed(1)) : Number(h.pnlPercent || 0);
 
         return {
           ...h,
@@ -285,10 +286,10 @@ export async function refreshPalHoldingsFromCse(force = false): Promise<any | nu
       return existing;
     }
 
-    const totalMarketValue = Number(updatedHoldings.reduce((acc, h) => acc + h.marketValue, 0).toFixed(2));
-    const totalCost = Number(updatedHoldings.reduce((acc, h) => acc + h.costBasis, 0).toFixed(2));
-    const totalUnrealizedPnl = Number(updatedHoldings.reduce((acc, h) => acc + h.unrealizedPnl, 0).toFixed(2));
-    const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(2)) : 0;
+    const totalMarketValue = Math.round(updatedHoldings.reduce((acc, h) => acc + h.marketValue, 0));
+    const totalCost = Math.round(updatedHoldings.reduce((acc, h) => acc + h.costBasis, 0));
+    const totalUnrealizedPnl = Math.round(updatedHoldings.reduce((acc, h) => acc + h.unrealizedPnl, 0));
+    const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(1)) : 0;
 
     const refreshedPayload = {
       ...existing,

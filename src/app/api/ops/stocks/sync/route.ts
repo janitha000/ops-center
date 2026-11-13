@@ -117,18 +117,17 @@ export async function POST(req: NextRequest) {
           }
 
           if (marketValue <= 0 && quantity > 0 && price > 0) {
-            marketValue = quantity * price;
+            marketValue = Math.round(quantity * price * (1 - 0.0112));
           }
 
-          const netSalesProceeds = marketValue * (1 - 0.0112);
           const unrealizedPnl = Number(
-            item.unrealizedGain ?? item.unrealizedPnl ?? item.pnl ?? (marketValue > 0 && costBasis > 0 ? netSalesProceeds - costBasis : 0)
+            item.unrealizedGain ?? item.unrealizedPnl ?? item.pnl ?? (marketValue > 0 && costBasis > 0 ? Math.round(marketValue - costBasis) : 0)
           );
           
           // Compute mathematically accurate PnL percentage against cost basis (after 1.12% CSE sell fees)
           let pnlPercent = 0;
           if (costBasis > 0) {
-            pnlPercent = Number(((unrealizedPnl / costBasis) * 100).toFixed(2));
+            pnlPercent = Number(((unrealizedPnl / costBasis) * 100).toFixed(1));
           } else if (item.pnlPercent !== undefined && Math.abs(item.pnlPercent) <= 500) {
             pnlPercent = Number(item.pnlPercent);
           } else {
@@ -140,10 +139,10 @@ export async function POST(req: NextRequest) {
             displaySymbol,
             name,
             quantity,
-            marketValue: Number(marketValue.toFixed(2)),
-            costBasis: Number(costBasis.toFixed(2)),
-            unrealizedPnl: Number(unrealizedPnl.toFixed(2)),
-            pnlPercent: Number(pnlPercent.toFixed(2)),
+            marketValue: Math.round(marketValue),
+            costBasis: Math.round(costBasis),
+            unrealizedPnl: Math.round(unrealizedPnl),
+            pnlPercent: Number(pnlPercent.toFixed(1)),
             price: Number(price.toFixed(2)),
             change: Number(change.toFixed(2)),
             changePct: Number(changePct.toFixed(2)),
@@ -152,10 +151,10 @@ export async function POST(req: NextRequest) {
         })
     );
 
-    const totalMarketValue = Number(normalized.reduce((acc, h) => acc + h.marketValue, 0).toFixed(2));
-    const totalCost = Number(normalized.reduce((acc, h) => acc + h.costBasis, 0).toFixed(2));
-    const totalUnrealizedPnl = Number(normalized.reduce((acc, h) => acc + h.unrealizedPnl, 0).toFixed(2));
-    const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(2)) : 0;
+    const totalMarketValue = Math.round(normalized.reduce((acc, h) => acc + h.marketValue, 0));
+    const totalCost = Math.round(normalized.reduce((acc, h) => acc + h.costBasis, 0));
+    const totalUnrealizedPnl = Math.round(normalized.reduce((acc, h) => acc + h.unrealizedPnl, 0));
+    const totalUnrealizedPnlPct = totalCost > 0 ? Number(((totalUnrealizedPnl / totalCost) * 100).toFixed(1)) : 0;
 
     const payloadToSave = {
       syncedAt: new Date().toISOString(),
