@@ -88,8 +88,9 @@ export function MaturityRadarPanel({ items, onRefresh }: MaturityRadarPanelProps
           </thead>
           <tbody className="divide-y divide-[#161b22]">
             {items.map((item) => {
-              const isCritical = item.daysRemaining <= 7;
-              const isWarning = item.daysRemaining > 7 && item.daysRemaining <= 30;
+              const hasDate = Boolean(item.maturityDate) && item.status !== "unknown";
+              const isCritical = hasDate && item.daysRemaining <= 7;
+              const isWarning = hasDate && item.daysRemaining > 7 && item.daysRemaining <= 30;
 
               return (
                 <tr key={item.id} className="hover:bg-[#111620] transition-colors h-8">
@@ -119,7 +120,7 @@ export function MaturityRadarPanel({ items, onRefresh }: MaturityRadarPanelProps
                           : "text-slate-400"
                       }`}
                     >
-                      {item.daysRemaining}d
+                      {hasDate ? `${item.daysRemaining}d` : "—"}
                     </span>
                   </td>
                   <td className="py-1 text-right text-emerald-400 font-semibold">

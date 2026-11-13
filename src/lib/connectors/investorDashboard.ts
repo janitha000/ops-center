@@ -121,8 +121,8 @@ function buildMaturityRadar(fds: any[], pfcaFds: any[], treasury: any[], overrid
     const amount = Number(f.amount || 0);
     const rate = Number(f.rate || 0);
     const tenureMonths = Number(f.tenureMonths || 12);
-    const matDateStr = override?.maturityDate || addMonthsToDate(now, tenureMonths);
-    const days = getDaysUntil(matDateStr);
+    const matDateStr = override?.maturityDate || f.maturityDate || undefined;
+    const days = matDateStr ? getDaysUntil(matDateStr) : 999;
     const expectedInterest = amount * (rate / 100) * (tenureMonths / 12) * 0.9; // 10% WHT in SL
 
     items.push({
@@ -133,10 +133,10 @@ function buildMaturityRadar(fds: any[], pfcaFds: any[], treasury: any[], overrid
       currency: "LKR",
       amount,
       rate,
-      startDate: override?.startDate,
+      startDate: override?.startDate || f.startDate,
       maturityDate: matDateStr,
       daysRemaining: days,
-      status: days <= 7 ? "critical" : days <= 30 ? "warning" : "upcoming",
+      status: !matDateStr ? "unknown" : days <= 7 ? "critical" : days <= 30 ? "warning" : "upcoming",
       expectedPayout: Math.round(amount + expectedInterest),
     });
   });
@@ -146,8 +146,8 @@ function buildMaturityRadar(fds: any[], pfcaFds: any[], treasury: any[], overrid
     const override = overrides.get(id);
     const amount = Number(p.amount || 0);
     const rate = Number(p.rate || 0);
-    const matDateStr = override?.maturityDate || addMonthsToDate(now, 12);
-    const days = getDaysUntil(matDateStr);
+    const matDateStr = override?.maturityDate || p.maturityDate || undefined;
+    const days = matDateStr ? getDaysUntil(matDateStr) : 999;
     const interestUsd = amount * (rate / 100);
 
     items.push({
@@ -158,10 +158,10 @@ function buildMaturityRadar(fds: any[], pfcaFds: any[], treasury: any[], overrid
       currency: "USD",
       amount,
       rate,
-      startDate: override?.startDate,
+      startDate: override?.startDate || p.startDate,
       maturityDate: matDateStr,
       daysRemaining: days,
-      status: days <= 7 ? "critical" : days <= 30 ? "warning" : "upcoming",
+      status: !matDateStr ? "unknown" : days <= 7 ? "critical" : days <= 30 ? "warning" : "upcoming",
       expectedPayout: Math.round(amount + interestUsd),
     });
   });
@@ -205,10 +205,8 @@ function getFallbackMaturityRadar(overrides: Map<string, any>): MaturityRadarIte
       currency: "LKR",
       amount: 2500000,
       rate: 10.25,
-      startDate: "2025-11-15",
-      maturityDate: "2026-11-15",
-      daysRemaining: 4,
-      status: "critical",
+      daysRemaining: 999,
+      status: "unknown",
       expectedPayout: 2730625,
     },
     {
@@ -219,10 +217,8 @@ function getFallbackMaturityRadar(overrides: Map<string, any>): MaturityRadarIte
       currency: "LKR",
       amount: 2000000,
       rate: 10.20,
-      startDate: "2025-11-28",
-      maturityDate: "2026-11-28",
-      daysRemaining: 17,
-      status: "warning",
+      daysRemaining: 999,
+      status: "unknown",
       expectedPayout: 2183600,
     },
     {

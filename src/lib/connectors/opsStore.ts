@@ -14,11 +14,7 @@ export type InstrumentDateOverride = {
 };
 
 // Global in-memory cache for overrides and bot state if no database is connected
-const memoryOverrides = new Map<string, InstrumentDateOverride>([
-  ["fd-combank-1", { instrumentId: "fd-combank-1", startDate: "2026-05-15", maturityDate: "2026-11-15" }],
-  ["tbill-1", { instrumentId: "tbill-1", startDate: "2026-02-10", maturityDate: "2026-11-28" }],
-  ["pfca-1", { instrumentId: "pfca-1", startDate: "2026-03-01", maturityDate: "2027-03-01" }],
-]);
+const memoryOverrides = new Map<string, InstrumentDateOverride>();
 
 let memoryBotCache: Record<string, unknown> | null = null;
 let memoryPalHoldings: any = null;
