@@ -30,6 +30,20 @@ function formatRelativeTime(dateString?: string): string {
   return `${diffDay}d ago`;
 }
 
+function formatExactSltTime(dateString?: string): string {
+  if (!dateString) return "";
+  const d = new Date(dateString);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", {
+    timeZone: "Asia/Colombo",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function LivePulseDot() {
   return (
     <span className="relative inline-flex items-center justify-center h-2 w-2 shrink-0">
@@ -98,6 +112,7 @@ export function FinancialBay({
   };
 
   const lastStockSyncStr = formatRelativeTime(finance.stocks.lastPalSync);
+  const lastStockSyncExactStr = formatExactSltTime(finance.stocks.lastPalSync);
   const lastCashflowSyncStr = formatRelativeTime(finance.lastUpdated);
 
   const formatVal = (amtLkr: number) => {
@@ -365,9 +380,16 @@ export function FinancialBay({
                 <SlidersHorizontal className="h-2.5 w-2.5 text-cyan-400" />
                 <span>MIN TARGETS</span>
               </button>
-              {lastStockSyncStr && (
-                <span className="text-[8px] font-mono text-slate-500 font-normal lowercase">
-                  ({lastStockSyncStr})
+              {lastStockSyncExactStr ? (
+                <span
+                  className="text-[8px] font-mono px-1.5 py-0.5 rounded-sm bg-[#061810] border border-[#133323] text-emerald-300/90 normal-case"
+                  title={`Last PAL.lk sync: ${finance.stocks.lastPalSync}`}
+                >
+                  Last Sync: <strong className="text-white">{lastStockSyncExactStr}</strong> ({lastStockSyncStr})
+                </span>
+              ) : (
+                <span className="text-[8px] font-mono text-amber-400/80 normal-case">
+                  (Not synced yet)
                 </span>
               )}
             </div>
@@ -479,9 +501,11 @@ export function FinancialBay({
         lastPalSync={finance.stocks.lastPalSync}
         syncedFrom={finance.stocks.syncedFrom}
         onSyncSuccess={() => {
-          setTimeout(() => {
+          if (onRefresh) {
+            onRefresh();
+          } else {
             window.location.reload();
-          }, 600);
+          }
         }}
       />
 

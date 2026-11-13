@@ -153,22 +153,42 @@ export async function setCachedBotState(data: Record<string, unknown>): Promise<
 }
 
 export async function getPalHoldings(): Promise<any | null> {
-  const sql = getSql();
-  if (!sql) return memoryPalHoldings;
-
+  // 1. Try Upstash KV first for persistent serverless storage
   try {
-    const rows = await sql`SELECT data FROM ops_pal_holdings WHERE id = 1`;
-    if (rows.length > 0) {
-      return rows[0].data;
+    const kvData = await kv.get<any>("ops_pal_holdings_v1");
+    if (kvData && typeof kvData === "object") {
+      memoryPalHoldings = kvData;
+      return kvData;
     }
-    return memoryPalHoldings;
-  } catch {
-    return memoryPalHoldings;
+  } catch (kvErr) {
+    // fallback
   }
+
+  // 2. Try Postgres
+  const sql = getSql();
+  if (sql) {
+    try {
+      const rows = await sql`SELECT data FROM ops_pal_holdings WHERE id = 1`;
+      if (rows.length > 0) {
+        return rows[0].data;
+      }
+    } catch {}
+  }
+
+  return memoryPalHoldings;
 }
 
 export async function savePalHoldings(data: any): Promise<void> {
   memoryPalHoldings = data;
+
+  // 1. Save to Upstash KV so PAL syncs persist across Vercel serverless invocations
+  try {
+    await kv.set("ops_pal_holdings_v1", data);
+  } catch (kvErr) {
+    console.warn("Error saving pal holdings to Upstash KV:", kvErr);
+  }
+
+  // 2. Save to Neon Postgres if configured
   const sql = getSql();
   if (!sql) return;
 
