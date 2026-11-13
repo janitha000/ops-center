@@ -413,6 +413,9 @@ export default function OperationsDashboard() {
         if (signal.targetZone && zoneToTab[signal.targetZone]) {
           setMonthlyBayTab(zoneToTab[signal.targetZone]);
         }
+        setTimeout(() => {
+          document.getElementById("deep-dive-bays")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 120);
       }
     },
     [handleRefreshZone, layoutMode]

@@ -495,13 +495,13 @@ export function MonthlyHorizonSection({
         </div>
 
         {/* Fixed Income & Treasury Maturity Radar */}
-        <div id="maturity-radar" className="xl:col-span-7">
+        <div id="maturity-radar" className="xl:col-span-7 scroll-mt-20">
           <MaturityRadarPanel items={investments.maturityRadar} onRefresh={onRefreshAll} />
         </div>
       </div>
 
       {/* ── TABBED / EXPANDABLE DEEP-DIVE DOMAIN BAYS ── */}
-      <div className="bg-[#090b0e] border border-[#1a2230] border-t border-t-white/10 rounded-md p-2.5 space-y-2.5">
+      <div id="deep-dive-bays" className="bg-[#090b0e] border border-[#1a2230] border-t border-t-white/10 rounded-md p-2.5 space-y-2.5 scroll-mt-20">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-2 border-b border-[#161b22]">
           <div className="flex items-center gap-2">
             <Layers className="h-3.5 w-3.5 text-indigo-400" />
