@@ -160,6 +160,19 @@ function formatDurationMinutes(totalMinutes: number): string {
   return `${hrs}h ${String(mins).padStart(2, "0")}m`;
 }
 
+function formatSltTime(isoOrText: string | null | undefined): string {
+  if (!isoOrText) return "";
+  const parsed = new Date(isoOrText);
+  if (Number.isNaN(parsed.getTime())) return isoOrText;
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Colombo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
+  return `${formatted} SLT`;
+}
+
 export function buildDailyOpsDigestEmail(
   payload: OpsDashboardPayload,
   temporal: TemporalDashboardModel
@@ -199,6 +212,45 @@ export function buildDailyOpsDigestEmail(
   const nextRadarItem = [...(payload.investments?.maturityRadar ?? [])]
     .filter((item) => item.daysRemaining >= 0)
     .sort((a, b) => a.daysRemaining - b.daysRemaining)[0];
+
+  const eatingWindowClosingSoon =
+    !live.fastingActive &&
+    live.eatingWindowActive &&
+    live.eatingWindowRemainingMinutes <= 60;
+  const fastingCardLabel = live.fastingActive
+    ? "16:8 Metabolic Fasting"
+    : live.eatingWindowActive
+      ? "8h Eating Window Countdown"
+      : "16:8 Metabolic Fasting";
+  const fastingHeadline = live.fastingActive
+    ? formatDurationMinutes(live.fastingMinutes)
+    : live.eatingWindowActive
+      ? `Closes in ${formatDurationMinutes(live.eatingWindowRemainingMinutes)}`
+      : "Window Closed";
+  const fastingHeadlineColor = live.fastingActive
+    ? "#059669"
+    : live.eatingWindowActive
+      ? eatingWindowClosingSoon
+        ? "#d97706"
+        : "#0891b2"
+      : "#475569";
+  const fastingSubline = live.fastingActive
+    ? `${live.fastingPct.toFixed(0)}% of ${Math.round(live.fastingGoalMinutes / 60)}h goal${live.fastingStartTime ? ` &middot; Started ${escapeHtml(live.fastingStartTime)}` : ""}`
+    : live.eatingWindowActive
+      ? `${live.fastBrokenAt ? `Broken ${escapeHtml(formatSltTime(live.fastBrokenAt))}` : "Feeding active"}${live.eatingWindowClosesAt ? ` &middot; Closes ${escapeHtml(formatSltTime(live.eatingWindowClosesAt))}` : ""}`
+      : "Start next 16:8 fat oxidation fast";
+
+  const cseTopMoverColor =
+    live.cseTopMoverChangePct >= 0 ? "#059669" : "#dc2626";
+  const cseConcentrationColor =
+    live.cseMaxConcentrationPct >= 22 ? "#d97706" : "#0f172a";
+
+  const paceVarianceColor =
+    daily.calendarPaceVariancePct > 10
+      ? "#dc2626"
+      : daily.calendarPaceVariancePct > 0
+        ? "#d97706"
+        : "#059669";
 
   const criticalTag =
     temporal.decisions.criticalCount > 0
@@ -330,12 +382,12 @@ export function buildDailyOpsDigestEmail(
                 <tr>
                   <td width="50%" style="padding-right: 6px; vertical-align: top;">
                     <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
-                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">16:8 Metabolic Fasting</div>
-                      <div style="font-size: 20px; font-weight: 800; color: ${live.fastingActive ? "#059669" : "#475569"}; margin-top: 4px;">
-                        ${live.fastingActive ? formatDurationMinutes(live.fastingMinutes) : "Feeding Window"}
+                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">${fastingCardLabel}</div>
+                      <div style="font-size: 20px; font-weight: 800; color: ${fastingHeadlineColor}; margin-top: 4px;">
+                        ${fastingHeadline}
                       </div>
                       <div style="font-size: 12px; color: #475569; margin-top: 3px;">
-                        ${live.fastingPct.toFixed(0)}% of ${Math.round(live.fastingGoalMinutes / 60)}h goal${live.fastingStartTime ? ` &middot; Started ${escapeHtml(live.fastingStartTime)}` : ""}
+                        ${fastingSubline}
                       </div>
                     </div>
                   </td>
@@ -344,12 +396,41 @@ export function buildDailyOpsDigestEmail(
                       <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Trading Bot (${escapeHtml(live.botMode.toUpperCase())})</div>
                       <div style="font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 4px;">${formatUSD(live.botTotalWalletUsdt)}</div>
                       <div style="font-size: 12px; color: #475569; margin-top: 3px;">
-                        <strong style="color: ${live.botRunning ? "#059669" : "#dc2626"};">${live.botRunning ? "RUNNING" : "OFFLINE"}</strong> &middot; ${live.botOpenPositionsCount} open &middot; Free ${formatUSD(live.botFreeUsdt)}
+                        <strong style="color: ${live.botRunning ? "#059669" : "#dc2626"};">${live.botRunning ? "RUNNING" : "OFFLINE"}</strong> &middot; ${live.botOpenPositionsCount} open &middot; ${live.botIdleCashPct.toFixed(1)}% idle (${formatUSD(live.botFreeUsdt)})
+                      </div>
+                      <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+                        Active Slot Signals: <strong>${live.botActiveSignalsCount}</strong> &middot; Unrealized ${live.botUnrealizedPnlUsdt >= 0 ? "+" : ""}${formatUSD(live.botUnrealizedPnlUsdt)}
                       </div>
                     </div>
                   </td>
                 </tr>
               </table>
+
+              <!-- CSE Equity Watch Strip -->
+              <div style="margin-top: 10px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 11px 14px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td width="40%" style="vertical-align: middle;">
+                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">CSE Intraday Watch</div>
+                      <div style="font-size: 12px; color: #334155; margin-top: 2px;">
+                        ${live.cseStockCount} stocks &middot; ${live.cseAlertsCount} alert${live.cseAlertsCount === 1 ? "" : "s"}
+                      </div>
+                    </td>
+                    <td width="30%" style="vertical-align: middle; text-align: right; padding-right: 10px;">
+                      <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Top Mover</div>
+                      <div style="font-size: 13px; font-weight: 800; color: ${cseTopMoverColor}; margin-top: 2px;">
+                        ${live.cseTopMoverSymbol ? `${escapeHtml(live.cseTopMoverSymbol)} (${formatPercent(live.cseTopMoverChangePct)})` : "&mdash;"}
+                      </div>
+                    </td>
+                    <td width="30%" style="vertical-align: middle; text-align: right;">
+                      <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Max Concentration</div>
+                      <div style="font-size: 13px; font-weight: 800; color: ${cseConcentrationColor}; margin-top: 2px;">
+                        ${live.cseMaxConcentrationSymbol ? `${escapeHtml(live.cseMaxConcentrationSymbol)} (${live.cseMaxConcentrationPct.toFixed(1)}%)` : "&mdash;"}
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
 
               ${openPositionsHtml}
             </td>
@@ -394,6 +475,15 @@ export function buildDailyOpsDigestEmail(
                     </td>
                   </tr>
                 </table>
+                <div style="margin-top: 10px; padding: 9px 12px; background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;">
+                  <div style="font-size: 10px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.4px;">Next Meal Macro Prescription</div>
+                  <div style="font-size: 12px; font-weight: 700; color: #1e1b4b; margin-top: 3px;">
+                    ${escapeHtml(daily.nextMealPrescription)}
+                  </div>
+                  <div style="font-size: 11px; color: #4338ca; margin-top: 2px;">
+                    Remaining: <strong>${Math.round(daily.remainingCaloriesToday)} kcal</strong> &middot; Protein needed: <strong>${daily.remainingProteinGrams.toFixed(0)}g</strong> &middot; Sugar cap left: <strong>&le; ${daily.remainingSugarGrams.toFixed(1)}g</strong> &middot; Macros: ${Math.round(daily.carbsGrams)}g C / ${Math.round(daily.fatGrams)}g F
+                  </div>
+                </div>
               </div>
 
               <!-- Cashburn & Solar Yield -->
@@ -405,6 +495,10 @@ export function buildDailyOpsDigestEmail(
                       <div style="font-size: 17px; font-weight: 800; color: #0f172a; margin-top: 4px;">${formatLKR(daily.dailySpendLkr)} <span style="font-size: 11px; font-weight: 500; color: #64748b;">/ day</span></div>
                       <div style="font-size: 12px; color: #475569; margin-top: 3px;">
                         Safe Burn: <strong>${formatLKR(daily.dailySafeBurnRateLkr)}/day</strong>
+                      </div>
+                      <div style="font-size: 11px; color: #475569; margin-top: 4px;">
+                        Budget <strong>${monthly.budgetUtilizationPct.toFixed(1)}%</strong> vs Month Elapsed <strong>${daily.monthElapsedPct.toFixed(1)}%</strong>
+                        (<strong style="color: ${paceVarianceColor};">${daily.calendarPaceVariancePct > 0 ? "+" : ""}${daily.calendarPaceVariancePct.toFixed(1)}% pace variance</strong>)
                       </div>
                       <div style="margin-top: 6px;">
                         <span style="display: inline-block; font-size: 10px; font-weight: 800; color: #ffffff; background-color: ${burnStatusColor}; padding: 2px 7px; border-radius: 4px;">${escapeHtml(daily.dailyBurnStatus)}</span>

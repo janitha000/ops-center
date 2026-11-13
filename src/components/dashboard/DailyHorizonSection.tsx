@@ -48,7 +48,7 @@ export function DailyHorizonSection({
   onRefreshZone,
   zoneRefreshing,
 }: DailyHorizonSectionProps) {
-  const { health, spendIncome, crossDomain, sprintTasks } = payload;
+  const { spendIncome, crossDomain, sprintTasks } = payload;
   const LKR_PER_USD = 310;
 
   const formatMoney = (amtLkr: number) =>
@@ -228,13 +228,13 @@ export function DailyHorizonSection({
 
               <div className="bg-[#020d0c] border border-[#0d3b38] p-1.5 rounded-sm">
                 <span className="block text-[8px] text-slate-500 uppercase">Carbs</span>
-                <span className="text-xs font-bold text-amber-300">{health.today.carbs}g</span>
+                <span className="text-xs font-bold text-amber-300">{daily.carbsGrams}g</span>
                 <span className="block text-[8px] text-slate-500">Macro</span>
               </div>
 
               <div className="bg-[#020d0c] border border-[#0d3b38] p-1.5 rounded-sm">
                 <span className="block text-[8px] text-slate-500 uppercase">Fat</span>
-                <span className="text-xs font-bold text-slate-200">{health.today.fat}g</span>
+                <span className="text-xs font-bold text-slate-200">{daily.fatGrams}g</span>
                 <span className="block text-[8px] text-slate-500">Macro</span>
               </div>
 
@@ -263,7 +263,7 @@ export function DailyHorizonSection({
             </div>
 
             {/* Water, Weight & Streak */}
-            <div className="grid grid-cols-3 gap-1.5 font-mono">
+            <div className="grid grid-cols-3 gap-1.5 mb-2 font-mono">
               <div className="bg-[#020d0c] border border-[#0d3b38] p-2 rounded-sm flex items-center gap-1.5">
                 <Droplets className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                 <div>
@@ -293,6 +293,37 @@ export function DailyHorizonSection({
                   <span className="block text-[8px] text-slate-500 uppercase">Streak</span>
                   <span className="text-xs font-bold text-amber-300">{daily.streakDays}d</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Next Meal Macro Prescription Callout */}
+            <div className="bg-teal-950/50 border border-teal-600/60 border-l-2 border-l-teal-400 rounded-sm p-2 font-mono">
+              <div className="flex items-center justify-between text-[8px] uppercase tracking-wider text-teal-300 font-bold mb-0.5">
+                <span>Next Meal Macro Prescription</span>
+                <span className="text-emerald-400">
+                  {daily.remainingCaloriesToday.toLocaleString()} kcal left
+                </span>
+              </div>
+              <p className="text-[10px] font-semibold text-white leading-snug">
+                {daily.nextMealPrescription}
+              </p>
+              <div className="flex items-center justify-between text-[8px] text-slate-300 mt-1 pt-1 border-t border-teal-800/60">
+                <span>
+                  Protein needed:{" "}
+                  <strong className="text-teal-300">{daily.remainingProteinGrams}g</strong>
+                </span>
+                <span>
+                  Sugar cap left:{" "}
+                  <strong
+                    className={
+                      daily.remainingSugarGrams === 0 && isSugarDanger
+                        ? "text-rose-400"
+                        : "text-emerald-300"
+                    }
+                  >
+                    {daily.remainingSugarGrams}g
+                  </strong>
+                </span>
               </div>
             </div>
           </div>
@@ -357,11 +388,39 @@ export function DailyHorizonSection({
               </div>
             </div>
 
-            {/* 7D Lifestyle/Dining Spend vs Glycemic & Caloric Response */}
+            {/* Calendar Pace Variance Strip */}
+            <div
+              className={`flex items-center justify-between px-2 py-1.5 mb-2 rounded-sm border font-mono text-[9px] ${
+                daily.calendarPaceVariancePct > 10
+                  ? "bg-rose-950/60 border-rose-700/70 text-rose-200"
+                  : daily.calendarPaceVariancePct > 0
+                  ? "bg-amber-950/50 border-amber-700/60 text-amber-200"
+                  : "bg-emerald-950/50 border-emerald-800/60 text-emerald-200"
+              }`}
+            >
+              <span className="truncate">
+                Budget Used <strong>{spendIncome.budgetUtilizationPct}%</strong> vs Month Elapsed{" "}
+                <strong>{daily.monthElapsedPct}%</strong>
+              </span>
+              <span
+                className={`font-bold shrink-0 ml-1 ${
+                  daily.calendarPaceVariancePct > 10
+                    ? "text-rose-300"
+                    : daily.calendarPaceVariancePct > 0
+                    ? "text-amber-300"
+                    : "text-emerald-300"
+                }`}
+              >
+                {daily.calendarPaceVariancePct > 0 ? "+" : ""}
+                {daily.calendarPaceVariancePct}% pace variance
+              </span>
+            </div>
+
+            {/* 7D Lifestyle/Dining Spend vs Caloric & Sugar Intake */}
             <div className="bg-[#0b0602] border border-[#381a07] rounded-sm p-2">
               <div className="flex items-center justify-between text-[9px] font-mono mb-1">
                 <span className="text-slate-300 uppercase font-semibold">
-                  7D Dining Spend vs. Glycemic/Caloric
+                  7D Dining Spend vs. Caloric &amp; Sugar Intake
                 </span>
                 <span className="text-rose-400 font-bold text-[8px]">CORRELATION</span>
               </div>

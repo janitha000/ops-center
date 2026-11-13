@@ -11,6 +11,9 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  Zap,
+  Landmark,
+  ShieldAlert,
 } from "lucide-react";
 import {
   AreaChart,
@@ -237,32 +240,196 @@ export function MonthlyHorizonSection({
               <Scale className="h-3 w-3 text-teal-400" />
               Biometric MTD
             </span>
-            <span className="text-slate-400">
-              Goal &lt;{monthly.hba1cTarget}%
+            <span className="text-cyan-300 font-bold">
+              {monthly.estimatedDaysToTargetWeight !== null
+                ? `${monthly.estimatedDaysToTargetWeight}d to ${Math.round(
+                    health.biometrics?.targetWeightKg ?? 75
+                  )}kg`
+                : "On Target"}
             </span>
           </div>
-          <div
-            className={`text-base font-bold tracking-tight ${
-              monthly.weightDeltaMtdKg <= 0 ? "text-emerald-400" : "text-amber-400"
-            }`}
-          >
-            {monthly.weightDeltaMtdKg > 0
-              ? `+${monthly.weightDeltaMtdKg.toFixed(1)}`
-              : monthly.weightDeltaMtdKg.toFixed(1)}{" "}
-            kg MTD
-          </div>
-          <div className="text-[8.5px] text-slate-400 mt-0.5">
-            HbA1c:{" "}
-            <strong
-              className={
-                monthly.hba1cCurrent <= monthly.hba1cTarget
-                  ? "text-emerald-400"
-                  : "text-amber-300"
-              }
+          <div className="flex items-baseline justify-between gap-1">
+            <div
+              className={`text-base font-bold tracking-tight ${
+                monthly.weightDeltaMtdKg <= 0 ? "text-emerald-400" : "text-amber-400"
+              }`}
             >
-              {monthly.hba1cCurrent.toFixed(1)}%
-            </strong>{" "}
-            / {monthly.hba1cTarget.toFixed(1)}%
+              {monthly.weightDeltaMtdKg > 0
+                ? `+${monthly.weightDeltaMtdKg.toFixed(1)}`
+                : monthly.weightDeltaMtdKg.toFixed(1)}{" "}
+              kg
+            </div>
+            <div className="text-[9.5px] text-slate-300">
+              Exp:{" "}
+              <strong
+                className={
+                  monthly.expectedFatLossMtdKg <= 0 ? "text-teal-300" : "text-amber-300"
+                }
+              >
+                {monthly.expectedFatLossMtdKg > 0
+                  ? `+${monthly.expectedFatLossMtdKg.toFixed(2)}`
+                  : monthly.expectedFatLossMtdKg.toFixed(2)}{" "}
+                kg
+              </strong>
+            </div>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-0.5 truncate">
+            {monthly.mtdCalorieDeficitKcal >= 0 ? (
+              <>
+                <strong className="text-emerald-400">
+                  {monthly.mtdCalorieDeficitKcal.toLocaleString()} kcal
+                </strong>{" "}
+                net deficit
+              </>
+            ) : (
+              <>
+                <strong className="text-rose-400">
+                  +{Math.abs(monthly.mtdCalorieDeficitKcal).toLocaleString()} kcal
+                </strong>{" "}
+                net surplus
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── CROSS-DOMAIN STRATEGIC INTELLIGENCE & ARBITRAGE STRIP (4 CARDS) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 font-mono">
+        {/* 1. Monthly Freedom Velocity (FI Gain) */}
+        <div className="bg-[#061310]/90 border border-emerald-900/60 border-t border-t-white/10 rounded-md p-2.5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between text-[8.5px] uppercase mb-1">
+              <span className="flex items-center gap-1 text-emerald-300 font-bold">
+                <Zap className="h-3 w-3 text-amber-400" />
+                Monthly Freedom Velocity
+              </span>
+              <span className="px-1.5 py-0.5 rounded-sm bg-emerald-950/80 border border-emerald-800/70 text-emerald-300 font-bold text-[8px]">
+                +{monthly.monthlyFiCoverageGainPct.toFixed(2)}% FI
+              </span>
+            </div>
+            <div className="text-base font-bold text-emerald-400 tracking-tight">
+              +{formatVal(monthly.monthlyFreedomVelocityLkr)}/mo
+            </div>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-1 pt-1 border-t border-emerald-950/80">
+            New perpetual passive income locked in from this month&apos;s net savings
+          </div>
+        </div>
+
+        {/* 2. Liability vs. Yield Arbitrage (OD vs. FD) */}
+        <div className="bg-[#120b05]/90 border border-amber-900/60 border-t border-t-white/10 rounded-md p-2.5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between text-[8.5px] uppercase mb-1">
+              <span className="flex items-center gap-1 text-amber-300 font-bold">
+                <Landmark className="h-3 w-3 text-amber-400" />
+                Liability vs. Yield Arbitrage
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded-sm border font-bold text-[8px] ${
+                  monthly.odVsFdArbitrageSpreadPct > 0
+                    ? "bg-amber-950/80 border-amber-700/70 text-amber-300"
+                    : "bg-slate-900 border-slate-700 text-slate-300"
+                }`}
+              >
+                {monthly.odVsFdArbitrageSpreadPct >= 0 ? "+" : ""}
+                {monthly.odVsFdArbitrageSpreadPct.toFixed(2)}% SPREAD
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between text-xs font-bold">
+              <span className="text-rose-300">
+                OD {monthly.odEffectiveAnnualRatePct.toFixed(2)}%
+              </span>
+              <span className="text-slate-500 text-[9px]">vs</span>
+              <span className="text-emerald-300">
+                FD (Post-WHT) {monthly.lowestPostTaxFdRatePct.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-1 pt-1 border-t border-amber-950/80 flex items-center justify-between gap-1">
+            <span className="truncate">
+              Drawn {formatVal(monthly.odDrawnLkr, true)} / {formatVal(monthly.odLimitLkr, true)}
+            </span>
+            <span className="text-amber-300 font-semibold shrink-0">
+              Tax-free OD paydown edge
+            </span>
+          </div>
+        </div>
+
+        {/* 3. Tax Efficiency & Hard Currency Hedge */}
+        <div className="bg-[#070d1a]/90 border border-cyan-900/60 border-t border-t-white/10 rounded-md p-2.5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between text-[8.5px] uppercase mb-1">
+              <span className="flex items-center gap-1 text-cyan-300 font-bold">
+                <ShieldCheck className="h-3 w-3 text-cyan-400" />
+                Tax &amp; Hard Currency Hedge
+              </span>
+              <span className="px-1.5 py-0.5 rounded-sm bg-cyan-950/80 border border-cyan-800/70 text-cyan-300 font-bold text-[8px]">
+                {monthly.hardCurrencyHedgePct.toFixed(1)}% USD
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-base font-bold text-emerald-400">
+                {monthly.taxFreePassiveSharePct.toFixed(1)}% Tax-Free
+              </span>
+              <span className="text-[9.5px] text-slate-300">
+                vs {monthly.whtTaxedPassiveSharePct.toFixed(1)}% WHT
+              </span>
+            </div>
+          </div>
+          <div className="text-[8.5px] text-slate-400 mt-1 pt-1 border-t border-cyan-950/80 flex items-center justify-between">
+            <span>UT + Div + PFCA</span>
+            <span className="text-cyan-300 font-bold">
+              USD Hedge: ${monthly.usdInvestedTotal.toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        {/* 4. Category Budget Breach & Solar/Bot Utility Offset */}
+        <div className="bg-[#14090c]/90 border border-rose-900/60 border-t border-t-white/10 rounded-md p-2.5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between text-[8.5px] uppercase mb-1">
+              <span className="flex items-center gap-1 text-rose-300 font-bold">
+                <ShieldAlert className="h-3 w-3 text-rose-400" />
+                Budget Breach &amp; Utility Offset
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded-sm border font-bold text-[8px] ${
+                  monthly.breachedCategoriesCount > 0
+                    ? "bg-rose-950/80 border-rose-700/70 text-rose-300"
+                    : "bg-emerald-950/80 border-emerald-800/70 text-emerald-300"
+                }`}
+              >
+                {monthly.breachedCategoriesCount} BREACHED
+              </span>
+            </div>
+
+            {monthly.topBreachedCategories.length > 0 ? (
+              <div className="space-y-0.5 text-[8.5px]">
+                {monthly.topBreachedCategories.slice(0, 2).map((cat) => (
+                  <div key={cat.name} className="flex items-center justify-between gap-1">
+                    <span className="text-slate-200 truncate">{cat.name}</span>
+                    <span className="text-rose-400 font-bold shrink-0">
+                      +{formatVal(cat.overrunLkr, true)} over
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[9px] text-emerald-400 font-semibold">
+                All normal categories within budget · Buffer{" "}
+                {formatVal(monthly.undocumentedBufferLkr, true)}
+              </div>
+            )}
+          </div>
+
+          <div className="text-[8.5px] text-slate-400 mt-1 pt-1 border-t border-rose-950/80 flex items-center justify-between gap-1">
+            <span className="truncate">
+              <strong className="text-amber-300">{monthly.solarBotUtilityOffsetPct.toFixed(1)}%</strong>{" "}
+              of Util/Subs ({formatVal(monthly.utilitiesAndSubsSpendLkr, true)})
+            </span>
+            <span className="text-emerald-300 font-semibold shrink-0">
+              Solar + Bot paid
+            </span>
           </div>
         </div>
       </div>

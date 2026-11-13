@@ -16,6 +16,11 @@ const CEB_NET_PLUS_TARIFF_LKR = 37;
 const DEFAULT_SOLAR_EXPORT_RATIO = 0.76;
 const DEFAULT_SOLAR_DAILY_TARGET_KWH = 15.0;
 const DEFAULT_FASTING_GOAL_MINUTES = 960;
+const EATING_WINDOW_MINUTES = 480;
+const BLENDED_POST_TAX_PORTFOLIO_YIELD = 0.096;
+const DEFAULT_USD_LKR_RATE = 310;
+const FALLBACK_POST_TAX_FD_RATE_PCT = 8.78;
+const KCAL_PER_KG_FAT = 7700;
 
 const SEVERITY_RANK: Record<DecisionSeverity, number> = {
   critical: 0,
@@ -57,14 +62,30 @@ function formatTickerLkr(price: number): string {
   })}`;
 }
 
-function getReferenceHour(timestamp?: string): number {
+function getReferenceDate(timestamp?: string): Date {
   if (timestamp) {
     const parsed = new Date(timestamp);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.getHours();
+      return parsed;
     }
   }
-  return new Date().getHours();
+  return new Date();
+}
+
+function getReferenceHour(timestamp?: string): number {
+  return getReferenceDate(timestamp).getHours();
+}
+
+function formatClockTime(iso: string | null): string {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Colombo",
+  });
 }
 
 function normalizeGridExportStatus(
@@ -122,6 +143,7 @@ function computeLiveSummary(
   const today = payload.health?.today;
   const bot = payload.bot;
   const tickers = payload.finance?.stocks?.tickers ?? [];
+  const refMs = getReferenceDate(payload.timestamp).getTime();
 
   const openPositions = extractOpenPositions(payload);
   const botUnrealizedPnlUsdt = roundTo(
@@ -129,6 +151,7 @@ function computeLiveSummary(
     2
   );
 
+  const fastingActive = Boolean(today?.isFastingActive);
   const fastingMinutes = safeNum(today?.fastingMinutes);
   const fastingGoalMinutes = safePositive(
     today?.fastingGoalMinutes,
@@ -139,10 +162,67 @@ function computeLiveSummary(
     Math.max(0, Math.round((fastingMinutes / fastingGoalMinutes) * 100))
   );
 
+  const fastBrokenAt =
+    !fastingActive && today?.fastingEndTime ? today.fastingEndTime : null;
+  let eatingWindowClosesAt: string | null = null;
+  let eatingWindowRemainingMinutes = 0;
+  let eatingWindowActive = false;
+
+  if (fastBrokenAt) {
+    const fastBrokenMs = Date.parse(fastBrokenAt);
+    if (!Number.isNaN(fastBrokenMs)) {
+      const closesAtMs = fastBrokenMs + EATING_WINDOW_MINUTES * 60 * 1000;
+      eatingWindowClosesAt = new Date(closesAtMs).toISOString();
+      const elapsedMinutes = Math.max(0, (refMs - fastBrokenMs) / 60000);
+      eatingWindowRemainingMinutes = Math.max(
+        0,
+        Math.round(EATING_WINDOW_MINUTES - elapsedMinutes)
+      );
+      eatingWindowActive = eatingWindowRemainingMinutes > 0;
+    }
+  }
+
+  const botFreeUsdt = roundTo(safeNum(bot?.freeUsdt), 2);
+  const botTotalWalletUsdt = roundTo(safeNum(bot?.totalWalletUsdt), 2);
+  const botActiveSignalsCount = (bot?.slots ?? []).filter(
+    (slot) => slot.enabled && slot.lastSignal && slot.lastSignal.toUpperCase() !== "HOLD"
+  ).length;
+  const botIdleCashPct =
+    botTotalWalletUsdt > 0 ? roundTo((botFreeUsdt / botTotalWalletUsdt) * 100, 1) : 0;
+
   const cseAlertsCount = tickers.reduce((count, ticker) => {
     const target = normalizedMinPrices[ticker.symbol.toUpperCase()];
     return target && ticker.price > 0 && ticker.price <= target ? count + 1 : count;
   }, 0);
+
+  let cseTopMoverSymbol: string | null = null;
+  let cseTopMoverChangePct = 0;
+  let maxAbsChange = -1;
+  for (const ticker of tickers) {
+    const absChange = Math.abs(safeNum(ticker.changePct));
+    if (absChange > maxAbsChange) {
+      maxAbsChange = absChange;
+      cseTopMoverSymbol = ticker.symbol;
+      cseTopMoverChangePct = roundTo(safeNum(ticker.changePct), 2);
+    }
+  }
+
+  const totalPortfolioVal = safePositive(
+    payload.finance?.stocks?.portfolioValue,
+    tickers.reduce((sum, t) => sum + safeNum(t.marketValue), 0)
+  );
+  let cseMaxConcentrationSymbol: string | null = null;
+  let cseMaxConcentrationPct = 0;
+  if (totalPortfolioVal > 0) {
+    for (const ticker of tickers) {
+      const pct = (safeNum(ticker.marketValue) / totalPortfolioVal) * 100;
+      if (pct > cseMaxConcentrationPct) {
+        cseMaxConcentrationPct = pct;
+        cseMaxConcentrationSymbol = ticker.symbol;
+      }
+    }
+    cseMaxConcentrationPct = roundTo(cseMaxConcentrationPct, 1);
+  }
 
   return {
     solarKw: roundTo(safeNum(solar?.currentKw), 2),
@@ -152,22 +232,32 @@ function computeLiveSummary(
     evRangeKm: Math.round(safeNum(fleet?.estimatedRangeKm)),
     evIsCharging: Boolean(fleet?.isCharging),
     evChargerConnected: Boolean(fleet?.chargerConnected),
-    fastingActive: Boolean(today?.isFastingActive),
+    fastingActive,
     fastingMinutes,
     fastingGoalMinutes,
     fastingPct,
     fastingStartTime: today?.fastingStartTime ?? null,
+    eatingWindowActive,
+    fastBrokenAt,
+    eatingWindowClosesAt,
+    eatingWindowRemainingMinutes,
     botRunning: Boolean(bot?.isRunning),
     botMode: bot?.mode ?? "offline",
     botOpenPositionsCount: Math.max(
       safeNum(bot?.openPositionsCount),
       openPositions.length
     ),
-    botFreeUsdt: roundTo(safeNum(bot?.freeUsdt), 2),
-    botTotalWalletUsdt: roundTo(safeNum(bot?.totalWalletUsdt), 2),
+    botFreeUsdt,
+    botTotalWalletUsdt,
     botUnrealizedPnlUsdt,
+    botActiveSignalsCount,
+    botIdleCashPct,
     cseStockCount: tickers.length,
     cseAlertsCount,
+    cseTopMoverSymbol,
+    cseTopMoverChangePct,
+    cseMaxConcentrationSymbol,
+    cseMaxConcentrationPct,
   };
 }
 
@@ -179,6 +269,7 @@ function computeDailySummary(
   const spendIncome = payload.spendIncome;
   const solar = payload.gridFleet?.solar;
   const tasks = payload.sprintTasks ?? [];
+  const refDate = getReferenceDate(payload.timestamp);
 
   const caloriesIntake = Math.round(safeNum(today?.calories));
   const calorieLimit = Math.round(safePositive(today?.calorieLimit, 2000));
@@ -188,6 +279,21 @@ function computeDailySummary(
   const targetCaloriesExpended = Math.round(
     safePositive(biometrics?.targetCaloriesExpended, 500)
   );
+
+  const proteinGrams = roundTo(safeNum(today?.protein), 1);
+  const proteinGoal = roundTo(safePositive(today?.proteinGoal, 120), 1);
+  const sugarGrams = roundTo(safeNum(today?.sugar), 1);
+  const sugarLimit = roundTo(safePositive(today?.sugarLimit, 30), 1);
+  const carbsGrams = roundTo(safeNum(today?.carbs), 1);
+  const fatGrams = roundTo(safeNum(today?.fat), 1);
+
+  const remainingCaloriesToday = Math.max(0, calorieLimit - caloriesIntake);
+  const remainingProteinGrams = Math.max(0, roundTo(proteinGoal - proteinGrams, 1));
+  const remainingSugarGrams = Math.max(0, roundTo(sugarLimit - sugarGrams, 1));
+  const nextMealPrescription =
+    remainingCaloriesToday > 0
+      ? `Target ${remainingProteinGrams}g protein within ${remainingCaloriesToday} kcal (<= ${remainingSugarGrams}g sugar)`
+      : "0 kcal remaining — close eating window & hydrate";
 
   const dailySpendLkr = Math.round(
     safeNum(
@@ -209,6 +315,13 @@ function computeDailySummary(
     }
   }
 
+  const currentDay = refDate.getDate();
+  const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+  const monthElapsedPct =
+    daysInMonth > 0 ? roundTo((currentDay / daysInMonth) * 100, 1) : 0;
+  const budgetUtilizationPct = roundTo(safeNum(spendIncome?.budgetUtilizationPct), 1);
+  const calendarPaceVariancePct = roundTo(budgetUtilizationPct - monthElapsedPct, 1);
+
   const solarDailyKwh = roundTo(safeNum(solar?.dailyKwh), 1);
   const solarDailyTargetKwh = roundTo(
     safePositive(solar?.dailyTargetKwh, DEFAULT_SOLAR_DAILY_TARGET_KWH),
@@ -219,7 +332,7 @@ function computeDailySummary(
     Math.round((solarDailyKwh / solarDailyTargetKwh) * 100)
   );
 
-  const todayDay = new Date().getDate();
+  const todayDay = currentDay;
   const todayHistory = solar?.historyMonth?.find((h) => h.day === todayDay);
   const dailyExportKwh =
     todayHistory && todayHistory.exportKwh > 0
@@ -236,10 +349,10 @@ function computeDailySummary(
     caloriesExpended,
     targetCaloriesExpended,
     netCalorieBalance: caloriesIntake - caloriesExpended,
-    proteinGrams: roundTo(safeNum(today?.protein), 1),
-    proteinGoal: roundTo(safePositive(today?.proteinGoal, 120), 1),
-    sugarGrams: roundTo(safeNum(today?.sugar), 1),
-    sugarLimit: roundTo(safePositive(today?.sugarLimit, 30), 1),
+    proteinGrams,
+    proteinGoal,
+    sugarGrams,
+    sugarLimit,
     waterGlasses: Math.round(safeNum(today?.waterGlasses)),
     waterGoal: Math.round(safePositive(today?.waterGoal, 8)),
     streakDays: Math.round(safeNum(today?.streakDays)),
@@ -251,6 +364,14 @@ function computeDailySummary(
     dailySpendLkr,
     dailySafeBurnRateLkr,
     dailyBurnStatus,
+    monthElapsedPct,
+    calendarPaceVariancePct,
+    remainingCaloriesToday,
+    remainingProteinGrams,
+    remainingSugarGrams,
+    carbsGrams,
+    fatGrams,
+    nextMealPrescription,
     solarDailyKwh,
     solarDailyTargetKwh,
     solarDailyPct,
@@ -270,6 +391,7 @@ function computeMonthlySummary(
   const bot = payload.bot;
   const health = payload.health;
   const crossDomain = payload.crossDomain;
+  const refDate = getReferenceDate(payload.timestamp);
 
   const totalInflowLkr = Math.round(
     safeNum(spendIncome?.inflow?.totalInflow ?? spendIncome?.totalMonthlyIncome)
@@ -279,6 +401,11 @@ function computeMonthlySummary(
   );
   const netCashFlowLkr = Math.round(
     safeNum(spendIncome?.netCashFlow, totalInflowLkr - totalOutflowLkr)
+  );
+  const normalLivingSpendLkr = Math.round(
+    safeNum(
+      spendIncome?.normalLivingSpend ?? spendIncome?.outflow?.household?.normal
+    )
   );
 
   const maturityRadar = investments?.maturityRadar ?? [];
@@ -301,7 +428,7 @@ function computeMonthlySummary(
       ? Math.min(...validDays)
       : null;
 
-  const currentDay = new Date().getDate();
+  const currentDay = refDate.getDate();
   const history = solar?.historyMonth ?? [];
   const historyMtdGen = history
     .filter((h) => h.day <= currentDay)
@@ -323,9 +450,149 @@ function computeMonthlySummary(
       : solarMtdKwh * DEFAULT_SOLAR_EXPORT_RATIO) * CEB_NET_PLUS_TARIFF_LKR
   );
 
+  // OD Cost vs. Fixed Income Yield Arbitrage
+  const odItems = spendIncome?.outflow?.od?.items ?? [];
+  const odDrawnLkr = Math.round(
+    odItems.reduce((sum, i) => sum + safeNum(i.currentDrawn), 0)
+  );
+  const odLimitLkr = Math.round(
+    odItems.reduce((sum, i) => sum + safeNum(i.overdraftLimit), 0)
+  );
+  const odLatestInterestLkr = Math.round(
+    odItems.reduce((sum, i) => sum + safeNum(i.latestInterest), 0)
+  );
+  const odEffectiveAnnualRatePct =
+    odDrawnLkr > 0 ? roundTo(((odLatestInterestLkr * 12) / odDrawnLkr) * 100, 2) : 0;
+  const lkrFdRates = maturityRadar
+    .filter((m) => m.type === "fd" && m.currency === "LKR" && safeNum(m.rate) > 0)
+    .map((m) => m.rate);
+  const lowestPostTaxFdRatePct =
+    lkrFdRates.length > 0
+      ? roundTo(Math.min(...lkrFdRates) * 0.9, 2)
+      : FALLBACK_POST_TAX_FD_RATE_PCT;
+  const odVsFdArbitrageSpreadPct =
+    odDrawnLkr > 0 && odEffectiveAnnualRatePct > 0
+      ? roundTo(odEffectiveAnnualRatePct - lowestPostTaxFdRatePct, 2)
+      : 0;
+
+  // Category Budget Breach Radar
+  const rawCategories =
+    (spendIncome?.categories && spendIncome.categories.length > 0
+      ? spendIncome.categories
+      : spendIncome?.outflow?.household?.categories) ?? [];
+  const breachedCategories = rawCategories
+    .filter(
+      (c) =>
+        c.parentType === "normal" &&
+        c.id !== "cat-undocumented" &&
+        safeNum(c.budgetAmount) > 0 &&
+        safeNum(c.amount) > safeNum(c.budgetAmount)
+    )
+    .map((c) => {
+      const amountLkr = Math.round(safeNum(c.amount));
+      const budgetLkr = Math.round(safeNum(c.budgetAmount));
+      return {
+        name: c.name,
+        amountLkr,
+        budgetLkr,
+        overrunLkr: amountLkr - budgetLkr,
+      };
+    })
+    .sort((a, b) => b.overrunLkr - a.overrunLkr);
+
+  const breachedCategoriesCount = breachedCategories.length;
+  const topBreachedCategories = breachedCategories.slice(0, 4);
+  const undocCat = rawCategories.find((c) => c.id === "cat-undocumented");
+  const undocumentedBufferLkr = Math.round(
+    safeNum(
+      spendIncome?.outflow?.household?.undocumentedBuffer,
+      safeNum(undocCat?.amount)
+    )
+  );
+
+  // Expected Fat Loss vs. Actual Scale Weight Delta & Target Weight ETA
+  const biometrics = health?.biometrics;
+  const mtdIntake = safeNum(biometrics?.mtdCaloriesIntake);
+  const mtdBurn = safeNum(biometrics?.mtdCaloriesExpended);
+  const mtdCalorieDeficitKcal = Math.round(mtdBurn - mtdIntake);
+  const expectedFatLossMtdKg = roundTo((mtdIntake - mtdBurn) / KCAL_PER_KG_FAT, 2);
+  const todayWeightKg = safeNum(health?.today?.weightKg ?? biometrics?.todayWeightKg);
+  const targetWeightKg = safeNum(biometrics?.targetWeightKg);
+  const avgDailyDeficit =
+    safeNum(biometrics?.avgDailyCaloriesExpended) -
+    safeNum(biometrics?.avgDailyCaloriesIntake);
+  const estimatedDaysToTargetWeight =
+    targetWeightKg > 0 && todayWeightKg > targetWeightKg && avgDailyDeficit > 100
+      ? Math.round(((todayWeightKg - targetWeightKg) * KCAL_PER_KG_FAT) / avgDailyDeficit)
+      : null;
+
+  // Tax Efficiency & USD Hard Currency Hedge
+  const incomeCategories = finance?.incomeCategories ?? [];
+  let taxFreeMonthly = 0;
+  let whtTaxedMonthly = 0;
+  let usdFromCategories = 0;
+  for (const cat of incomeCategories) {
+    const net = safeNum(cat.netMonthly);
+    const isTaxFree =
+      cat.badgeType === "ut" ||
+      cat.badgeType === "cse" ||
+      cat.badgeType === "pfca" ||
+      Boolean(cat.note && /tax-free/i.test(cat.note));
+    if (isTaxFree) {
+      taxFreeMonthly += net;
+    } else {
+      whtTaxedMonthly += net;
+    }
+    usdFromCategories += safeNum(cat.usdInvested);
+  }
+  const totalIncomeCategoriesNet = taxFreeMonthly + whtTaxedMonthly;
+  const taxFreePassiveSharePct =
+    totalIncomeCategoriesNet > 0
+      ? roundTo((taxFreeMonthly / totalIncomeCategoriesNet) * 100, 1)
+      : 0;
+  const whtTaxedPassiveSharePct =
+    totalIncomeCategoriesNet > 0
+      ? roundTo((whtTaxedMonthly / totalIncomeCategoriesNet) * 100, 1)
+      : 0;
+  const hardCurrencyHedgePct = roundTo(safeNum(finance?.hardCurrencyHedgePct, 24.8), 1);
+  const usdInvestedTotal = usdFromCategories > 0 ? Math.round(usdFromCategories) : 58000;
+
+  // Cross-Domain Executive Metrics
+  const botMtdRealizedPnlUsdt = roundTo(
+    safeNum(bot?.monthRealizedPnlUsdt ?? bot?.totalRealizedPnlUsdt),
+    2
+  );
+  const monthlyFreedomVelocityLkr =
+    netCashFlowLkr > 0
+      ? Math.round((netCashFlowLkr * BLENDED_POST_TAX_PORTFOLIO_YIELD) / 12)
+      : 0;
+  const monthlyFiCoverageGainPct =
+    normalLivingSpendLkr > 0
+      ? roundTo((monthlyFreedomVelocityLkr / normalLivingSpendLkr) * 100, 2)
+      : 0;
+
+  const utilitiesAndSubsSum = Math.round(
+    rawCategories
+      .filter(
+        (c) =>
+          c.parentType === "normal" &&
+          (/util|bill|subscrip/i.test(c.name) ||
+            c.id === "cat-util" ||
+            c.id === "cat-sub")
+      )
+      .reduce((sum, c) => sum + safeNum(c.amount), 0)
+  );
+  const utilitiesAndSubsSpendLkr = utilitiesAndSubsSum > 0 ? utilitiesAndSubsSum : 41300;
+  const solarBotUtilityOffsetPct = roundTo(
+    ((solarMtdRevenueLkr + Math.max(0, botMtdRealizedPnlUsdt * DEFAULT_USD_LKR_RATE)) /
+      Math.max(1, utilitiesAndSubsSpendLkr)) *
+      100,
+    1
+  );
+
   return {
     currentMonth:
-      spendIncome?.currentMonth || new Date().toISOString().slice(0, 7),
+      spendIncome?.currentMonth || refDate.toISOString().slice(0, 7),
     totalNetWorthLkr: Math.round(safeNum(finance?.totalNetWorthLkr)),
     netWorthDeltaPct: roundTo(safeNum(finance?.netWorthDeltaPct), 2),
     netMonthlyPassiveAfterIitLkr: Math.round(
@@ -353,11 +620,7 @@ function computeMonthlySummary(
     netCashFlowLkr,
     savingsRatePct: roundTo(safeNum(spendIncome?.savingsRatePct), 1),
     budgetUtilizationPct: roundTo(safeNum(spendIncome?.budgetUtilizationPct), 1),
-    normalLivingSpendLkr: Math.round(
-      safeNum(
-        spendIncome?.normalLivingSpend ?? spendIncome?.outflow?.household?.normal
-      )
-    ),
+    normalLivingSpendLkr,
     baselineBudgetLkr: Math.round(
       safeNum(
         spendIncome?.baselineBudget ?? spendIncome?.outflow?.household?.baselineBudget
@@ -368,14 +631,31 @@ function computeMonthlySummary(
     nextMaturityDays,
     solarMtdKwh,
     solarMtdRevenueLkr,
-    botMtdRealizedPnlUsdt: roundTo(
-      safeNum(bot?.monthRealizedPnlUsdt ?? bot?.totalRealizedPnlUsdt),
-      2
-    ),
+    botMtdRealizedPnlUsdt,
     botWinRatePct: roundTo(safeNum(bot?.winRatePct), 1),
     weightDeltaMtdKg: roundTo(safeNum(health?.biometrics?.weightDeltaMtdKg), 1),
-    hba1cCurrent: roundTo(safeNum(health?.hba1c?.current), 1),
-    hba1cTarget: roundTo(safePositive(health?.hba1c?.target, 5.7), 1),
+    odDrawnLkr,
+    odLimitLkr,
+    odLatestInterestLkr,
+    odEffectiveAnnualRatePct,
+    lowestPostTaxFdRatePct,
+    odVsFdArbitrageSpreadPct,
+    breachedCategoriesCount,
+    topBreachedCategories,
+    undocumentedBufferLkr,
+    mtdCalorieDeficitKcal,
+    expectedFatLossMtdKg,
+    estimatedDaysToTargetWeight,
+    taxFreePassiveSharePct,
+    whtTaxedPassiveSharePct,
+    hardCurrencyHedgePct,
+    usdInvestedTotal,
+    monthlyFreedomVelocityLkr,
+    monthlyFiCoverageGainPct,
+    solarBotUtilityOffsetPct,
+    utilitiesAndSubsSpendLkr,
+    hba1cCurrent: 0,
+    hba1cTarget: 0,
   };
 }
 
@@ -496,6 +776,29 @@ function buildLiveSignals(
         targetZone: "zone3",
       });
     }
+  } else if (live.fastBrokenAt && live.eatingWindowActive) {
+    const closingSoon = live.eatingWindowRemainingMinutes <= 60;
+    const closesTimeStr = formatClockTime(live.eatingWindowClosesAt);
+    signals.push({
+      id: "live-bio-eating-window",
+      horizon: "live",
+      domain: "BIO",
+      severity: closingSoon ? "warning" : "nominal",
+      title: closingSoon
+        ? "8h Eating Window Closing Soon"
+        : "8h Eating Window Active",
+      metricLabel: "8h Feeding Window Countdown",
+      currentValue: `${formatDurationMinutes(live.eatingWindowRemainingMinutes)} remaining`,
+      thresholdValue: closesTimeStr ? `Closes ${closesTimeStr}` : "8h window limit",
+      whyItMatters:
+        "Closing meals on time protects your 16h overnight fasting cadence, fat oxidation, and daily caloric cap.",
+      recommendedAction: closingSoon
+        ? `8h eating window closes in ${formatDurationMinutes(live.eatingWindowRemainingMinutes)} — finish final protein & hydrate.`
+        : `Complete remaining protein and calorie targets within ${formatDurationMinutes(live.eatingWindowRemainingMinutes)}.`,
+      actionLabel: "Open Bio Bay",
+      actionType: "open_tab",
+      targetZone: "zone3",
+    });
   }
 
   // 3. Trading bot status & open positions stop-loss proximity
@@ -521,39 +824,148 @@ function buildLiveSignals(
 
   const openPositions = extractOpenPositions(payload);
   for (const pos of openPositions) {
-    if (pos.stopLoss <= 0 || pos.currentPrice <= 0) continue;
-    const distancePct =
-      pos.side === "SHORT"
-        ? ((pos.stopLoss - pos.currentPrice) / pos.currentPrice) * 100
-        : ((pos.currentPrice - pos.stopLoss) / pos.currentPrice) * 100;
+    if (pos.currentPrice <= 0) continue;
 
-    if (distancePct <= 3.5) {
-      const isImminent = distancePct <= 1.5;
-      signals.push({
-        id: `live-bot-stoploss-${pos.symbol}`,
-        horizon: "live",
-        domain: "BOT",
-        severity: isImminent ? "critical" : "warning",
-        title: isImminent
-          ? `Stop-Loss Imminent: ${pos.symbol}`
-          : `Stop-Loss Proximity: ${pos.symbol}`,
-        metricLabel: `${pos.symbol} (${pos.side}) SL Buffer`,
-        currentValue: `${distancePct.toFixed(2)}% ($${pos.currentPrice.toFixed(2)})`,
-        thresholdValue: `SL $${pos.stopLoss.toFixed(2)}`,
-        whyItMatters:
-          "Price is trading tightly against the protective stop-loss level, risking automated exit.",
-        recommendedAction:
-          "Inspect order book volatility and confirm stop-loss placement in Bot Bay.",
-        actionLabel: "Inspect Bot",
-        actionType: "open_tab",
-        targetZone: "zone5",
-      });
+    if (pos.stopLoss > 0) {
+      const distancePct =
+        pos.side === "SHORT"
+          ? ((pos.stopLoss - pos.currentPrice) / pos.currentPrice) * 100
+          : ((pos.currentPrice - pos.stopLoss) / pos.currentPrice) * 100;
+
+      if (distancePct <= 3.5) {
+        const isImminent = distancePct <= 1.5;
+        signals.push({
+          id: `live-bot-stoploss-${pos.symbol}`,
+          horizon: "live",
+          domain: "BOT",
+          severity: isImminent ? "critical" : "warning",
+          title: isImminent
+            ? `Stop-Loss Imminent: ${pos.symbol}`
+            : `Stop-Loss Proximity: ${pos.symbol}`,
+          metricLabel: `${pos.symbol} (${pos.side}) SL Buffer`,
+          currentValue: `${distancePct.toFixed(2)}% ($${pos.currentPrice.toFixed(2)})`,
+          thresholdValue: `SL $${pos.stopLoss.toFixed(2)}`,
+          whyItMatters:
+            "Price is trading tightly against the protective stop-loss level, risking automated exit.",
+          recommendedAction:
+            "Inspect order book volatility and confirm stop-loss placement in Bot Bay.",
+          actionLabel: "Inspect Bot",
+          actionType: "open_tab",
+          targetZone: "zone5",
+        });
+      }
+    }
+
+    if (pos.takeProfit > 0) {
+      const tpDistancePct =
+        pos.side === "SHORT"
+          ? ((pos.currentPrice - pos.takeProfit) / pos.currentPrice) * 100
+          : ((pos.takeProfit - pos.currentPrice) / pos.currentPrice) * 100;
+
+      if (tpDistancePct <= 2.5) {
+        signals.push({
+          id: `live-bot-tp-${pos.symbol}`,
+          horizon: "live",
+          domain: "BOT",
+          severity: "opportunity",
+          title: `Take-Profit Proximity: ${pos.symbol}`,
+          metricLabel: `${pos.symbol} (${pos.side}) TP Distance`,
+          currentValue: `${tpDistancePct.toFixed(2)}% ($${pos.currentPrice.toFixed(2)})`,
+          thresholdValue: `TP $${pos.takeProfit.toFixed(2)}`,
+          whyItMatters:
+            "Position is within 2.5% of its take-profit target; trailing the stop-loss protects unrealized gains from reversal.",
+          recommendedAction:
+            "Trail stop-loss closer to entry/profit or prepare partial profit lock-in in Bot Bay.",
+          actionLabel: "Manage TP",
+          actionType: "open_tab",
+          targetZone: "zone5",
+        });
+      }
     }
   }
 
-  // 4. CSE stock tickers below minStockPrices target
+  if (live.botActiveSignalsCount > 0) {
+    const activeSlotLabels = (payload.bot?.slots ?? [])
+      .filter((s) => s.enabled && s.lastSignal && s.lastSignal.toUpperCase() !== "HOLD")
+      .map((s) => `${s.symbol} (${s.lastSignal})`)
+      .slice(0, 3);
+    signals.push({
+      id: "live-bot-active-signals",
+      horizon: "live",
+      domain: "BOT",
+      severity: "opportunity",
+      title: `${live.botActiveSignalsCount} Active Bot Slot Signal${
+        live.botActiveSignalsCount === 1 ? "" : "s"
+      }`,
+      metricLabel: "Strategy Trigger / Idle USDT",
+      currentValue: `${activeSlotLabels.join(", ")} · ${live.botIdleCashPct.toFixed(1)}% idle USDT`,
+      thresholdValue: "Non-HOLD signal active",
+      whyItMatters:
+        "Enabled strategy slots have fired directional signals while free USDT liquidity is available for deployment.",
+      recommendedAction:
+        "Verify signal execution and position sizing in Bot Bay.",
+      actionLabel: "Open Bot Bay",
+      actionType: "open_tab",
+      targetZone: "zone5",
+    });
+  }
+
+  // 4. CSE stock tickers: concentration, drawdown/profit & minStockPrices target
   const tickers = payload.finance?.stocks?.tickers ?? [];
+  if (live.cseMaxConcentrationSymbol && live.cseMaxConcentrationPct >= 22) {
+    signals.push({
+      id: "live-fin-cse-concentration",
+      horizon: "live",
+      domain: "FIN",
+      severity: "warning",
+      title: `CSE Concentration Risk: ${live.cseMaxConcentrationSymbol}`,
+      metricLabel: "Single-Stock Weight",
+      currentValue: `${live.cseMaxConcentrationPct.toFixed(1)}% of portfolio`,
+      thresholdValue: "< 22.0% position cap",
+      whyItMatters: `${live.cseMaxConcentrationSymbol} exceeds 22% of total CSE equity value, amplifying single-issuer volatility.`,
+      recommendedAction: `Trim future allocations to ${live.cseMaxConcentrationSymbol} and diversify new equity buys into underweight tickers.`,
+      actionLabel: "Review Equities",
+      actionType: "open_tab",
+      targetZone: "zone1",
+    });
+  }
+
   for (const ticker of tickers) {
+    const unrealizedPnlPct = safeNum(ticker.unrealizedPnlPct);
+    if (unrealizedPnlPct <= -8) {
+      signals.push({
+        id: `live-fin-cse-drawdown-${ticker.symbol}`,
+        horizon: "live",
+        domain: "FIN",
+        severity: "warning",
+        title: `Deep Drawdown Review: ${ticker.symbol}`,
+        metricLabel: `${ticker.symbol} Unrealized P&L`,
+        currentValue: `${unrealizedPnlPct.toFixed(2)}% (${formatLKR(ticker.unrealizedPnl)})`,
+        thresholdValue: "> -8.0% drawdown guard",
+        whyItMatters: `${ticker.name || ticker.symbol} is down ${Math.abs(unrealizedPnlPct).toFixed(1)}% against cost basis, warranting a thesis check.`,
+        recommendedAction: `Audit ${ticker.symbol} earnings outlook to decide between averaging down or rotating capital.`,
+        actionLabel: "Review Equities",
+        actionType: "open_tab",
+        targetZone: "zone1",
+      });
+    } else if (unrealizedPnlPct >= 8) {
+      signals.push({
+        id: `live-fin-cse-profit-${ticker.symbol}`,
+        horizon: "live",
+        domain: "FIN",
+        severity: "opportunity",
+        title: `Profit-Take / Rebalance: ${ticker.symbol}`,
+        metricLabel: `${ticker.symbol} Unrealized Gain`,
+        currentValue: `+${unrealizedPnlPct.toFixed(2)}% (+${formatLKR(ticker.unrealizedPnl)})`,
+        thresholdValue: ">= +8.0% (clears 1.12% CSE fee)",
+        whyItMatters: `${ticker.name || ticker.symbol} gain comfortably clears the 1.12% CSE sell transaction fee for tax-free capital gain harvesting.`,
+        recommendedAction: `Consider trimming part of ${ticker.symbol} to lock in gains or rebalance portfolio concentration.`,
+        actionLabel: "Review Equities",
+        actionType: "open_tab",
+        targetZone: "zone1",
+      });
+    }
+
     const targetPrice = normalizedMinPrices[ticker.symbol.toUpperCase()];
     if (!targetPrice || ticker.price <= 0 || ticker.price > targetPrice) {
       continue;
@@ -597,7 +1009,7 @@ function buildDailySignals(
       currentValue: `${daily.sugarGrams}g`,
       thresholdValue: `<= ${daily.sugarLimit}g`,
       whyItMatters:
-        "Exceeding the daily sugar ceiling spikes glycemic variability and works against HbA1c reduction.",
+        "Exceeding the daily sugar ceiling consumes remaining caloric budget and suppresses fat oxidation.",
       recommendedAction:
         "Eliminate simple carbs for remaining meals and take a 20-minute post-meal walk.",
       actionLabel: "Open Bio Bay",
@@ -668,7 +1080,7 @@ function buildDailySignals(
     });
   }
 
-  // 3. Daily spend vs dailySafeBurnRate
+  // 3. Daily spend vs dailySafeBurnRate & calendar pace variance
   if (
     daily.dailySafeBurnRateLkr > 0 &&
     daily.dailySpendLkr > daily.dailySafeBurnRateLkr
@@ -688,6 +1100,26 @@ function buildDailySignals(
       recommendedAction:
         "Freeze discretionary purchases today and defer non-essential spend until pace normalizes.",
       actionLabel: "Review Spend",
+      actionType: "open_tab",
+      targetZone: "zone2",
+    });
+  }
+
+  if (daily.calendarPaceVariancePct > 10) {
+    const budgetUtilPct = roundTo(safeNum(payload.spendIncome?.budgetUtilizationPct), 1);
+    signals.push({
+      id: "daily-spend-calendar-pace",
+      horizon: "daily",
+      domain: "SPEND",
+      severity: "warning",
+      title: "Budget Burn Ahead of Month Pace",
+      metricLabel: "Budget Used vs. Month Elapsed",
+      currentValue: `${budgetUtilPct}% used vs ${daily.monthElapsedPct}% elapsed (+${daily.calendarPaceVariancePct}% pace)`,
+      thresholdValue: "<= +10.0% ahead of calendar pace",
+      whyItMatters: `Budget ${budgetUtilPct}% used vs ${daily.monthElapsedPct}% of month elapsed (+${daily.calendarPaceVariancePct}% over pace), risking a late-month baseline overshoot.`,
+      recommendedAction:
+        "Hold discretionary purchases for the next few days to bring spend trajectory back in line with calendar pace.",
+      actionLabel: "Review Pace",
       actionType: "open_tab",
       targetZone: "zone2",
     });
@@ -971,6 +1403,113 @@ function buildMonthlySignals(
         ? "Continue compounding surplus toward 100% total-expense FI coverage."
         : "Focus on high-yield rollovers and disciplined monthly investment commitments.",
       actionLabel: "Open Finance Bay",
+      actionType: "open_tab",
+      targetZone: "zone1",
+    });
+  }
+
+  // 6. OD Cost vs. Fixed Income Yield Arbitrage
+  if (monthly.odDrawnLkr > 0 && monthly.odVsFdArbitrageSpreadPct > 0) {
+    signals.push({
+      id: "monthly-fin-od-arbitrage",
+      horizon: "monthly",
+      domain: "FIN",
+      severity: "opportunity",
+      title: "OD vs. FD Yield Arbitrage",
+      metricLabel: "OD Effective Rate vs. Post-WHT FD",
+      currentValue: `${monthly.odEffectiveAnnualRatePct.toFixed(2)}% OD vs ${monthly.lowestPostTaxFdRatePct.toFixed(2)}% net FD (+${monthly.odVsFdArbitrageSpreadPct.toFixed(2)}%)`,
+      thresholdValue: "0.00% spread",
+      whyItMatters: `Paying down ${formatLKR(monthly.odDrawnLkr)} OD saves ${monthly.odEffectiveAnnualRatePct.toFixed(2)}% tax-free vs ${monthly.lowestPostTaxFdRatePct.toFixed(2)}% post-WHT FD yield (+${monthly.odVsFdArbitrageSpreadPct.toFixed(2)}% risk-free arbitrage spread).`,
+      recommendedAction:
+        "Sweep maturing low-yield FD capital or net cash surplus to reduce OD principal before renewing FDs.",
+      actionLabel: "Audit OD Arbitrage",
+      actionType: "open_tab",
+      targetZone: "zone2",
+    });
+  }
+
+  // 7. Category Budget Breach Radar
+  if (monthly.breachedCategoriesCount > 0) {
+    const topBreachSummary = monthly.topBreachedCategories
+      .map((c) => `${c.name} (+${formatLKR(c.overrunLkr)})`)
+      .join(", ");
+    signals.push({
+      id: "monthly-spend-category-breaches",
+      horizon: "monthly",
+      domain: "SPEND",
+      severity: "warning",
+      title: `${monthly.breachedCategoriesCount} Categor${
+        monthly.breachedCategoriesCount === 1 ? "y" : "ies"
+      } Over Budget`,
+      metricLabel: "Category Overrun Radar",
+      currentValue: topBreachSummary,
+      thresholdValue: "Within category caps",
+      whyItMatters: `Individual normal categories have breached caps (${topBreachSummary}), eroding monthly savings potential.`,
+      recommendedAction: `Inspect ${monthly.topBreachedCategories[0]?.name || "breached categories"} in Spend & Income Bay and tighten remaining variable spend.`,
+      actionLabel: "Inspect Categories",
+      actionType: "open_tab",
+      targetZone: "zone2",
+    });
+  }
+
+  // 8. Expected Fat Loss vs. Actual Scale Weight Delta & Target Weight ETA
+  const biometrics = payload.health?.biometrics;
+  const hasBioTrajectory =
+    safeNum(biometrics?.mtdCaloriesIntake) > 0 ||
+    safeNum(biometrics?.mtdCaloriesExpended) > 0 ||
+    monthly.weightDeltaMtdKg !== 0 ||
+    monthly.estimatedDaysToTargetWeight !== null;
+
+  if (hasBioTrajectory) {
+    const isSurplus = monthly.mtdCalorieDeficitKcal < 0;
+    const isWaterVariance =
+      !isSurplus && monthly.weightDeltaMtdKg > 0 && monthly.expectedFatLossMtdKg < -0.2;
+    const deltaSign = monthly.weightDeltaMtdKg > 0 ? "+" : "";
+    const fatSign = monthly.expectedFatLossMtdKg > 0 ? "+" : "";
+    const etaText =
+      monthly.estimatedDaysToTargetWeight !== null
+        ? `~${monthly.estimatedDaysToTargetWeight}d to target weight`
+        : "Log intake & burn for ETA";
+
+    signals.push({
+      id: "monthly-bio-weight-trajectory",
+      horizon: "monthly",
+      domain: "BIO",
+      severity: isSurplus ? "warning" : "nominal",
+      title: isSurplus
+        ? "MTD Caloric Surplus Warning"
+        : isWaterVariance
+        ? "Weight Trajectory: Water Retention vs. Deficit"
+        : "MTD Fat Loss & Target Weight Pace",
+      metricLabel: "Scale Delta vs. Expected Fat Loss",
+      currentValue: `${deltaSign}${monthly.weightDeltaMtdKg.toFixed(1)} kg scale · ${fatSign}${monthly.expectedFatLossMtdKg.toFixed(2)} kg math`,
+      thresholdValue: etaText,
+      whyItMatters: `MTD net calorie deficit of ${monthly.mtdCalorieDeficitKcal.toLocaleString()} kcal implies ${fatSign}${monthly.expectedFatLossMtdKg.toFixed(2)} kg fat change (at 7,700 kcal/kg) compared to ${deltaSign}${monthly.weightDeltaMtdKg.toFixed(1)} kg on the scale.`,
+      recommendedAction:
+        monthly.estimatedDaysToTargetWeight !== null
+          ? `Maintain current daily deficit to reach target weight in ~${monthly.estimatedDaysToTargetWeight} days.`
+          : "Keep consistent daily calorie logging and Google Fit burn telemetry to project target weight ETA.",
+      actionLabel: "Open Bio Bay",
+      actionType: "open_tab",
+      targetZone: "zone3",
+    });
+  }
+
+  // 9. Cross-Domain Executive Metrics (Freedom Velocity & Solar/Bot Utility Offset)
+  if (monthly.monthlyFreedomVelocityLkr > 0 || monthly.solarBotUtilityOffsetPct > 0) {
+    signals.push({
+      id: "monthly-ops-freedom-velocity",
+      horizon: "monthly",
+      domain: "OPS",
+      severity: "opportunity",
+      title: "Freedom Velocity & Utility Offset",
+      metricLabel: "Perpetual FI Added / Bills Offset",
+      currentValue: `+${formatLKR(monthly.monthlyFreedomVelocityLkr)}/mo · ${monthly.solarBotUtilityOffsetPct.toFixed(1)}% offset`,
+      thresholdValue: `+${monthly.monthlyFiCoverageGainPct.toFixed(2)}% FI coverage gain`,
+      whyItMatters: `Net savings lock in +${formatLKR(monthly.monthlyFreedomVelocityLkr)}/mo perpetual passive income at 9.6% blended post-tax yield (+${monthly.monthlyFiCoverageGainPct.toFixed(2)}% FI gain), while Solar + Bot offset ${monthly.solarBotUtilityOffsetPct.toFixed(1)}% of ${formatLKR(monthly.utilitiesAndSubsSpendLkr)} utilities & subscriptions.`,
+      recommendedAction:
+        "Deploy monthly net surplus into high-yield instruments before month-end to cement this perpetual cashflow gain.",
+      actionLabel: "Review Strategy",
       actionType: "open_tab",
       targetZone: "zone1",
     });

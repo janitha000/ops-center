@@ -28,11 +28,11 @@ interface LiveHorizonSectionProps {
   onToggleBotPaused: () => void;
 }
 
-function formatSltTime(isoStr: string | null | undefined): string {
-  if (!isoStr) return "8:59 PM";
+function formatSltTime(isoStr: string | null | undefined, fallback = "—"): string {
+  if (!isoStr) return fallback;
   try {
     const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "8:59 PM";
+    if (isNaN(d.getTime())) return fallback;
     return d.toLocaleTimeString("en-US", {
       timeZone: "Asia/Colombo",
       hour: "numeric",
@@ -40,7 +40,7 @@ function formatSltTime(isoStr: string | null | undefined): string {
       hour12: true,
     });
   } catch {
-    return "8:59 PM";
+    return fallback;
   }
 }
 
@@ -61,13 +61,13 @@ export function LiveHorizonSection({
   const evSegments = 10;
   const evFilled = Math.min(evSegments, Math.max(0, Math.round((live.evBatteryPct / 100) * evSegments)));
 
-  // Fasting calculations
+  // Fasting & 8h eating window calculations
   const fastingHours = Math.floor(live.fastingMinutes / 60);
   const fastingMins = live.fastingMinutes % 60;
   const fastingHhMm = `${fastingHours.toString().padStart(2, "0")}:${fastingMins
     .toString()
     .padStart(2, "0")}`;
-  const fastingStartLabel = formatSltTime(live.fastingStartTime);
+  const fastingStartLabel = formatSltTime(live.fastingStartTime, "8:59 PM");
   const totalFastingSegments = 16;
   const filledFastingSegments = Math.min(
     totalFastingSegments,
@@ -75,6 +75,20 @@ export function LiveHorizonSection({
   );
   const isAutophagy = live.fastingMinutes >= 960;
   const isKetosis = live.fastingMinutes >= 720 && live.fastingMinutes < 960;
+
+  const fastBrokenSource = live.fastBrokenAt ?? health.today.fastingEndTime ?? null;
+  const showEatingWindow = !live.fastingActive && (live.eatingWindowActive || Boolean(fastBrokenSource));
+  const eatingRemHours = Math.floor(live.eatingWindowRemainingMinutes / 60);
+  const eatingRemMins = live.eatingWindowRemainingMinutes % 60;
+  const eatingRemHhMm = `${eatingRemHours}h ${eatingRemMins.toString().padStart(2, "0")}m`;
+  const eatingElapsedMinutes = Math.max(0, Math.min(480, 480 - live.eatingWindowRemainingMinutes));
+  const totalEatingSegments = 8;
+  const filledEatingSegments = Math.min(
+    totalEatingSegments,
+    Math.floor((eatingElapsedMinutes / 480) * totalEatingSegments)
+  );
+  const fastBrokenLabel = formatSltTime(fastBrokenSource);
+  const eatingClosesLabel = formatSltTime(live.eatingWindowClosesAt);
 
   const openPositions = bot.openPositions || [];
   const effectiveBotActive = live.botRunning && !botPaused;
@@ -230,22 +244,28 @@ export function LiveHorizonSection({
               <div className="flex items-center gap-1.5">
                 <span
                   className={`px-1.5 py-0.5 rounded-sm font-mono text-[8px] font-bold border ${
-                    isAutophagy
-                      ? "bg-emerald-950/90 text-emerald-300 border-emerald-700/80"
-                      : isKetosis
-                      ? "bg-teal-950/90 text-teal-300 border-teal-700/80"
-                      : live.fastingActive
-                      ? "bg-cyan-950/80 text-cyan-300 border-cyan-800/70"
+                    live.fastingActive
+                      ? isAutophagy
+                        ? "bg-emerald-950/90 text-emerald-300 border-emerald-700/80"
+                        : isKetosis
+                        ? "bg-teal-950/90 text-teal-300 border-teal-700/80"
+                        : "bg-cyan-950/80 text-cyan-300 border-cyan-800/70"
+                      : live.eatingWindowActive
+                      ? live.eatingWindowRemainingMinutes <= 60
+                        ? "bg-amber-950/90 text-amber-300 border-amber-700/80"
+                        : "bg-teal-950/90 text-teal-200 border-teal-700/80"
                       : "bg-slate-900 text-slate-400 border-slate-700"
                   }`}
                 >
-                  {isAutophagy
-                    ? "AUTOPHAGY ACTIVE"
-                    : isKetosis
-                    ? "KETOSIS ZONE"
-                    : live.fastingActive
-                    ? "FASTING LIVE"
-                    : "FEEDING WINDOW"}
+                  {live.fastingActive
+                    ? isAutophagy
+                      ? "FAT OXIDATION / AUTOPHAGY"
+                      : isKetosis
+                      ? "FAT OXIDATION / KETOSIS"
+                      : "FASTING LIVE"
+                    : live.eatingWindowActive
+                    ? "8H FEEDING WINDOW"
+                    : "FEEDING WINDOW CLOSED"}
                 </span>
                 <button
                   onClick={() => onRefreshZone("zone3")}
@@ -258,49 +278,107 @@ export function LiveHorizonSection({
               </div>
             </div>
 
-            {/* Elapsed Timer */}
-            <div className="bg-[#020c0b] border border-[#0d3b38]/80 rounded-sm p-2.5 mb-2 font-mono">
-              <div className="flex items-baseline justify-between mb-1">
-                <div>
-                  <span className="block text-[8px] text-slate-500 uppercase">Elapsed Window</span>
-                  <span className="text-2xl font-bold text-teal-300 tracking-tight">
-                    {fastingHhMm}
-                  </span>
-                  <span className="text-[10px] text-slate-400 ml-1.5">/ 16.0h</span>
+            {showEatingWindow ? (
+              /* Live 8h Eating Window Closing Countdown */
+              <div className="bg-[#020c0b] border border-[#0d3b38]/80 rounded-sm p-2.5 mb-2 font-mono">
+                <div className="flex items-baseline justify-between mb-1">
+                  <div>
+                    <span className="block text-[8px] text-amber-400/90 uppercase font-bold">
+                      8h Eating Window Remaining
+                    </span>
+                    <span
+                      className={`text-2xl font-bold tracking-tight ${
+                        live.eatingWindowRemainingMinutes === 0
+                          ? "text-rose-400"
+                          : live.eatingWindowRemainingMinutes <= 60
+                          ? "text-amber-300"
+                          : "text-teal-300"
+                      }`}
+                    >
+                      {live.eatingWindowRemainingMinutes > 0 ? eatingRemHhMm : "0h 00m"}
+                    </span>
+                    <span className="text-[10px] text-slate-400 ml-1.5">/ 8.0h</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="block text-[8px] text-slate-400">
+                      Broke Fast: <strong className="text-teal-200">{fastBrokenLabel}</strong>
+                    </span>
+                    <span className="block text-[9px] text-amber-300 font-bold mt-0.5">
+                      Stop @ {eatingClosesLabel} SLT
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-sm font-bold text-emerald-400">{live.fastingPct}%</span>
-                  <span className="block text-[8px] text-slate-400">
-                    Start: <strong className="text-teal-200">{fastingStartLabel}</strong>
-                  </span>
+
+                {/* 8-Segment Hour-by-Hour Eating Window Progress Bar */}
+                <div className="flex gap-0.5 h-2.5 w-full bg-[#061f1d] p-0.5 my-2">
+                  {Array.from({ length: totalEatingSegments }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 h-full ${
+                        i < filledEatingSegments
+                          ? i >= 6
+                            ? "bg-amber-400"
+                            : "bg-teal-500"
+                          : i === filledEatingSegments && live.eatingWindowActive
+                          ? "bg-amber-300/70 animate-pulse"
+                          : "bg-[#031211]"
+                      }`}
+                      title={`Feeding Hour ${i + 1} / 8`}
+                    />
+                  ))}
+                </div>
+
+                <div className="flex justify-between text-[8px] text-slate-500">
+                  <span>Open ({fastBrokenLabel})</span>
+                  <span className="text-teal-400/80">16:8 Window</span>
+                  <span className="text-amber-400 font-bold">Close ({eatingClosesLabel})</span>
                 </div>
               </div>
+            ) : (
+              /* Elapsed Fasting Timer */
+              <div className="bg-[#020c0b] border border-[#0d3b38]/80 rounded-sm p-2.5 mb-2 font-mono">
+                <div className="flex items-baseline justify-between mb-1">
+                  <div>
+                    <span className="block text-[8px] text-slate-500 uppercase">Elapsed Window</span>
+                    <span className="text-2xl font-bold text-teal-300 tracking-tight">
+                      {fastingHhMm}
+                    </span>
+                    <span className="text-[10px] text-slate-400 ml-1.5">/ 16.0h</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-emerald-400">{live.fastingPct}%</span>
+                    <span className="block text-[8px] text-slate-400">
+                      Start: <strong className="text-teal-200">{fastingStartLabel}</strong>
+                    </span>
+                  </div>
+                </div>
 
-              {/* 16-Segment Hour-by-Hour Progress Bar */}
-              <div className="flex gap-0.5 h-2.5 w-full bg-[#061f1d] p-0.5 my-2">
-                {Array.from({ length: totalFastingSegments }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 h-full ${
-                      i < filledFastingSegments
-                        ? i >= 12
-                          ? "bg-emerald-400 shadow-[0_0_4px_#34d399]"
-                          : "bg-teal-500"
-                        : i === filledFastingSegments && live.fastingActive
-                        ? "bg-teal-400/70 animate-pulse"
-                        : "bg-[#031211]"
-                    }`}
-                    title={`Hour ${i + 1} / 16`}
-                  />
-                ))}
-              </div>
+                {/* 16-Segment Hour-by-Hour Progress Bar */}
+                <div className="flex gap-0.5 h-2.5 w-full bg-[#061f1d] p-0.5 my-2">
+                  {Array.from({ length: totalFastingSegments }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`flex-1 h-full ${
+                        i < filledFastingSegments
+                          ? i >= 12
+                            ? "bg-emerald-400 shadow-[0_0_4px_#34d399]"
+                            : "bg-teal-500"
+                          : i === filledFastingSegments && live.fastingActive
+                          ? "bg-teal-400/70 animate-pulse"
+                          : "bg-[#031211]"
+                      }`}
+                      title={`Hour ${i + 1} / 16`}
+                    />
+                  ))}
+                </div>
 
-              <div className="flex justify-between text-[8px] text-slate-500">
-                <span>0h</span>
-                <span className="text-teal-400/80">12h Ketosis</span>
-                <span className="text-emerald-400 font-bold">16h Autophagy</span>
+                <div className="flex justify-between text-[8px] text-slate-500">
+                  <span>0h</span>
+                  <span className="text-teal-400/80">12h Fat Oxidation</span>
+                  <span className="text-emerald-400 font-bold">16h Autophagy</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2 mt-1 border-t border-[#0d3b38] font-mono text-[9px] text-slate-400">
@@ -355,18 +433,37 @@ export function LiveHorizonSection({
               </div>
             </div>
 
-            {/* Wallet USDT */}
-            <div className="grid grid-cols-2 gap-2 bg-[#040714] border border-[#17234d]/80 rounded-sm p-2 mb-2 font-mono">
+            {/* Wallet USDT & Active Signals */}
+            <div className="grid grid-cols-3 gap-1.5 bg-[#040714] border border-[#17234d]/80 rounded-sm p-2 mb-2 font-mono">
               <div>
                 <span className="block text-[8px] text-slate-500 uppercase">Free USDT</span>
-                <span className="text-base font-bold text-slate-100">
+                <span className="text-sm font-bold text-slate-100">
                   {formatUSD(live.botFreeUsdt)}
+                </span>
+                <span className="block text-[8px] text-cyan-400 font-semibold">
+                  {live.botIdleCashPct.toFixed(1)}% Free USDT
                 </span>
               </div>
               <div className="border-l border-[#17234d] pl-2">
                 <span className="block text-[8px] text-slate-500 uppercase">Total Wallet</span>
-                <span className="text-base font-bold text-cyan-300">
+                <span className="text-sm font-bold text-cyan-300">
                   {formatUSD(live.botTotalWalletUsdt)}
+                </span>
+                <span className="block text-[8px] text-slate-400">
+                  {live.botOpenPositionsCount} open pos
+                </span>
+              </div>
+              <div className="border-l border-[#17234d] pl-2">
+                <span className="block text-[8px] text-slate-500 uppercase">Slot Signals</span>
+                <span
+                  className={`text-sm font-bold ${
+                    live.botActiveSignalsCount > 0 ? "text-emerald-400" : "text-slate-300"
+                  }`}
+                >
+                  {live.botActiveSignalsCount}
+                </span>
+                <span className="block text-[8px] text-slate-400">
+                  Active / {bot.slots?.length || 0} slots
                 </span>
               </div>
             </div>
@@ -375,47 +472,77 @@ export function LiveHorizonSection({
             <div className="space-y-1.5 max-h-[125px] overflow-y-auto pr-0.5 font-mono">
               {openPositions.length === 0 ? (
                 <div className="bg-[#040714] border border-[#17234d]/70 rounded-sm p-2 text-center text-[9px] text-slate-400">
-                  0 open positions · Scanning {bot.slots?.length || 0} slots
+                  0 open positions · Scanning {bot.slots?.length || 0} slots ({live.botActiveSignalsCount} active signals)
                 </div>
               ) : (
-                openPositions.map((pos) => (
-                  <div
-                    key={pos.id || pos.symbol}
-                    className="bg-[#040714] border border-[#17234d] rounded-sm p-1.5 text-[9px]"
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="font-bold text-cyan-300">
-                        {pos.symbol}{" "}
+                openPositions.map((pos) => {
+                  const isLong = pos.side === "LONG";
+                  const slDistPct =
+                    pos.stopLoss > 0 && pos.currentPrice > 0
+                      ? ((isLong ? pos.currentPrice - pos.stopLoss : pos.stopLoss - pos.currentPrice) /
+                          pos.currentPrice) *
+                        100
+                      : null;
+                  const tpDistPct =
+                    pos.takeProfit > 0 && pos.currentPrice > 0
+                      ? ((isLong ? pos.takeProfit - pos.currentPrice : pos.currentPrice - pos.takeProfit) /
+                          pos.currentPrice) *
+                        100
+                      : null;
+                  const isNearTp = tpDistPct !== null && tpDistPct >= 0 && tpDistPct <= 2.5;
+
+                  return (
+                    <div
+                      key={pos.id || pos.symbol}
+                      className="bg-[#040714] border border-[#17234d] rounded-sm p-1.5 text-[9px]"
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="font-bold text-cyan-300">
+                          {pos.symbol}{" "}
+                          <span
+                            className={`text-[8px] px-1 rounded-2xs ${
+                              isLong
+                                ? "bg-emerald-950 text-emerald-300"
+                                : "bg-rose-950 text-rose-300"
+                            }`}
+                          >
+                            {pos.side}
+                          </span>
+                        </span>
                         <span
-                          className={`text-[8px] px-1 rounded-2xs ${
-                            pos.side === "LONG"
-                              ? "bg-emerald-950 text-emerald-300"
-                              : "bg-rose-950 text-rose-300"
+                          className={`font-bold ${
+                            pos.unrealizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"
                           }`}
                         >
-                          {pos.side}
+                          {pos.unrealizedPnl >= 0
+                            ? `+${formatUSD(pos.unrealizedPnl)}`
+                            : `-${formatUSD(Math.abs(pos.unrealizedPnl))}`}
                         </span>
-                      </span>
-                      <span
-                        className={`font-bold ${
-                          pos.unrealizedPnl >= 0 ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {pos.unrealizedPnl >= 0
-                          ? `+${formatUSD(pos.unrealizedPnl)}`
-                          : `-${formatUSD(Math.abs(pos.unrealizedPnl))}`}
-                      </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[8px] text-slate-400">
+                        <span>
+                          In: {formatUSD(pos.entryPrice)} → {formatUSD(pos.currentPrice)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[8px] mt-0.5 pt-0.5 border-t border-[#17234d]/60">
+                        <span className="text-rose-300/90">
+                          SL {pos.stopLoss > 0 ? formatUSD(pos.stopLoss) : "—"}{" "}
+                          {slDistPct !== null && (
+                            <span className="text-slate-400">({slDistPct.toFixed(1)}% away)</span>
+                          )}
+                        </span>
+                        <span className={isNearTp ? "text-emerald-300 font-bold" : "text-emerald-400/90"}>
+                          TP {pos.takeProfit > 0 ? formatUSD(pos.takeProfit) : "—"}{" "}
+                          {tpDistPct !== null && (
+                            <span className={isNearTp ? "text-emerald-300" : "text-slate-400"}>
+                              ({tpDistPct.toFixed(1)}% to TP)
+                            </span>
+                          )}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-[8px] text-slate-400">
-                      <span>
-                        In: {formatUSD(pos.entryPrice)} → {formatUSD(pos.currentPrice)}
-                      </span>
-                      <span>
-                        SL {formatUSD(pos.stopLoss)} / TP {formatUSD(pos.takeProfit)}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -539,16 +666,56 @@ export function LiveHorizonSection({
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2 mt-2 border-t border-[#133323] font-mono text-[9px] text-slate-400">
-            <span>Port: <strong className="text-emerald-300">{formatLKR(finance.stocks.portfolioValue, true)}</strong></span>
-            <button
-              onClick={() => onRefreshZone("zone1")}
-              disabled={!!zoneRefreshing.zone1}
-              className="px-2 py-0.5 rounded-sm bg-[#0b2419] hover:bg-[#133323] border border-[#164e35] text-emerald-300 font-bold flex items-center gap-1 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-2.5 w-2.5 ${zoneRefreshing.zone1 ? "animate-spin" : ""}`} />
-              <span>SYNC ZONE 1</span>
-            </button>
+          <div className="space-y-1.5 pt-2 mt-2 border-t border-[#133323] font-mono">
+            {/* Top Intraday Mover & Max Portfolio Concentration Strip */}
+            <div className="grid grid-cols-2 gap-1.5 bg-[#040c08] border border-[#133323] rounded-sm px-2 py-1 text-[8.5px]">
+              <div className="truncate">
+                <span className="text-slate-500 uppercase">Top Mover: </span>
+                {live.cseTopMoverSymbol ? (
+                  <strong
+                    className={
+                      live.cseTopMoverChangePct >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }
+                  >
+                    {live.cseTopMoverSymbol.split(".")[0]} {formatPercent(live.cseTopMoverChangePct)}
+                  </strong>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
+              </div>
+              <div className="text-right truncate border-l border-[#133323] pl-1.5">
+                <span className="text-slate-500 uppercase">Max Conc: </span>
+                {live.cseMaxConcentrationSymbol ? (
+                  <strong
+                    className={
+                      live.cseMaxConcentrationPct >= 22 ? "text-amber-300" : "text-slate-200"
+                    }
+                  >
+                    {live.cseMaxConcentrationSymbol.split(".")[0]}{" "}
+                    {live.cseMaxConcentrationPct.toFixed(1)}%
+                  </strong>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[9px] text-slate-400">
+              <span>
+                Port:{" "}
+                <strong className="text-emerald-300">
+                  {formatLKR(finance.stocks.portfolioValue, true)}
+                </strong>
+              </span>
+              <button
+                onClick={() => onRefreshZone("zone1")}
+                disabled={!!zoneRefreshing.zone1}
+                className="px-2 py-0.5 rounded-sm bg-[#0b2419] hover:bg-[#133323] border border-[#164e35] text-emerald-300 font-bold flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-2.5 w-2.5 ${zoneRefreshing.zone1 ? "animate-spin" : ""}`} />
+                <span>SYNC ZONE 1</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -797,7 +797,7 @@ export default function OperationsDashboard() {
               <div className="bg-[#090b0e] border border-[#161b22] border-t border-t-white/10 rounded-md p-3">
                 <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-[#161b22] text-xs font-mono">
                   <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">
-                    Lifestyle Spend vs. Glycemic &amp; Caloric Response (7D)
+                    Lifestyle Dining Spend vs. Caloric &amp; Sugar Intake (7D)
                   </span>
                   <span className="text-rose-400 font-bold">CROSS-DOMAIN CORRELATION</span>
                 </div>

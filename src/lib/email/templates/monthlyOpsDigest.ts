@@ -109,8 +109,33 @@ export function buildMonthlyOpsDigestEmail(
           })
           .join("");
 
-  // Section 4: Domain Rollups
+  // Section 4: Cross-Domain Strategic Intelligence & Arbitrage
+  const odSpreadPositive = monthly.odVsFdArbitrageSpreadPct > 0;
+  const breachedCategoriesHtml =
+    monthly.topBreachedCategories.length === 0
+      ? `<div style="font-size: 12px; color: #059669; margin-top: 4px;">No normal budget categories breached this month.</div>`
+      : `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-top: 6px;">
+          ${monthly.topBreachedCategories
+            .slice(0, 4)
+            .map(
+              (cat) => `
+            <tr style="border-top: 1px solid #f1f5f9;">
+              <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #0f172a;">${escapeHtml(cat.name)}</td>
+              <td style="padding: 5px 0; font-size: 11px; color: #64748b; text-align: right;">${formatLKR(cat.amountLkr, true)} / ${formatLKR(cat.budgetLkr, true)}</td>
+              <td style="padding: 5px 0; font-size: 12px; font-weight: 800; color: #dc2626; text-align: right; padding-left: 8px;">+${formatLKR(cat.overrunLkr, true)}</td>
+            </tr>`
+            )
+            .join("")}
+        </table>`;
+
+  // Section 5: Domain Rollups
   const weightDeltaColor = monthly.weightDeltaMtdKg <= 0 ? "#059669" : "#d97706";
+  const expectedFatLossColor =
+    monthly.expectedFatLossMtdKg <= 0 ? "#059669" : "#d97706";
+  const targetWeightEtaLabel =
+    monthly.estimatedDaysToTargetWeight !== null
+      ? `${monthly.estimatedDaysToTargetWeight} days`
+      : "On Target";
   const botPnlColor = monthly.botMtdRealizedPnlUsdt >= 0 ? "#059669" : "#dc2626";
   const mtdTrades =
     payload.bot?.monthTradesCount ?? payload.bot?.completedTradesCount ?? 0;
@@ -305,25 +330,98 @@ export function buildMonthlyOpsDigestEmail(
             </td>
           </tr>
 
-          <!-- Section 4: Monthly Domain Rollups -->
+          <!-- Section 4: Cross-Domain Strategic Intelligence & Arbitrage -->
+          <tr>
+            <td style="padding: 8px 24px 18px 24px;">
+              <div style="font-size: 11px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px;">Section 4 // Cross-Domain Intelligence &amp; Arbitrage</div>
+              <h2 style="margin: 2px 0 12px 0; font-size: 16px; font-weight: 800; color: #0f172a;">Cross-Domain Strategic Intelligence &amp; Arbitrage</h2>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 10px;">
+                <tr>
+                  <td width="50%" style="padding-right: 6px; padding-bottom: 10px; vertical-align: top;">
+                    <div style="background-color: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 10px; padding: 12px 14px;">
+                      <div style="font-size: 10px; font-weight: 800; color: #5b21b6; text-transform: uppercase;">Monthly Freedom Velocity</div>
+                      <div style="font-size: 19px; font-weight: 800; color: #4c1d95; margin-top: 4px;">+${formatLKR(monthly.monthlyFreedomVelocityLkr)}<span style="font-size: 11px; font-weight: 600; color: #6d28d9;">/mo</span></div>
+                      <div style="font-size: 11px; color: #5b21b6; margin-top: 3px; line-height: 1.4;">
+                        New perpetual passive cashflow locked in &middot; <strong>+${monthly.monthlyFiCoverageGainPct.toFixed(2)}%</strong> FI coverage gain
+                      </div>
+                    </div>
+                  </td>
+                  <td width="50%" style="padding-left: 6px; padding-bottom: 10px; vertical-align: top;">
+                    <div style="background-color: ${odSpreadPositive ? "#ecfeff" : "#f8fafc"}; border: 1px solid ${odSpreadPositive ? "#a5f3fc" : "#e2e8f0"}; border-radius: 10px; padding: 12px 14px;">
+                      <div style="font-size: 10px; font-weight: 800; color: #0e7490; text-transform: uppercase;">OD Cost vs. FD Yield Arbitrage</div>
+                      <div style="font-size: 19px; font-weight: 800; color: ${odSpreadPositive ? "#0e7490" : "#334155"}; margin-top: 4px;">
+                        ${monthly.odVsFdArbitrageSpreadPct >= 0 ? "+" : ""}${monthly.odVsFdArbitrageSpreadPct.toFixed(2)}% <span style="font-size: 11px; font-weight: 600; color: #475569;">spread</span>
+                      </div>
+                      <div style="font-size: 11px; color: #334155; margin-top: 3px; line-height: 1.4;">
+                        OD Rate: <strong>${monthly.odEffectiveAnnualRatePct.toFixed(2)}%</strong> vs Post-WHT FD: <strong>${monthly.lowestPostTaxFdRatePct.toFixed(2)}%</strong><br/>
+                        Drawn ${formatLKR(monthly.odDrawnLkr, true)} / ${formatLKR(monthly.odLimitLkr, true)} (Int: ${formatLKR(monthly.odLatestInterestLkr)})
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="50%" style="padding-right: 6px; vertical-align: top;">
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
+                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Tax Efficiency &amp; Hard Currency Hedge</div>
+                      <div style="font-size: 16px; font-weight: 800; color: #059669; margin-top: 4px;">
+                        ${monthly.taxFreePassiveSharePct.toFixed(1)}% <span style="font-size: 11px; font-weight: 600; color: #475569;">tax-free passive</span>
+                      </div>
+                      <div style="font-size: 11px; color: #475569; margin-top: 3px; line-height: 1.4;">
+                        WHT-Taxed: ${monthly.whtTaxedPassiveSharePct.toFixed(1)}% &middot; USD Hedge: <strong>${monthly.hardCurrencyHedgePct.toFixed(1)}%</strong> ($${monthly.usdInvestedTotal.toLocaleString()})
+                      </div>
+                    </div>
+                  </td>
+                  <td width="50%" style="padding-left: 6px; vertical-align: top;">
+                    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
+                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Solar + Bot Utility Offset Ratio</div>
+                      <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 4px;">
+                        ${monthly.solarBotUtilityOffsetPct.toFixed(1)}% <span style="font-size: 11px; font-weight: 600; color: #475569;">offset</span>
+                      </div>
+                      <div style="font-size: 11px; color: #475569; margin-top: 3px; line-height: 1.4;">
+                        Covered against <strong>${formatLKR(monthly.utilitiesAndSubsSpendLkr)}</strong> monthly Utilities &amp; Subscriptions
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Category Budget Breach Radar -->
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">
+                      Category Budget Breach Radar (${monthly.breachedCategoriesCount} breached)
+                    </td>
+                    <td style="font-size: 11px; color: #475569; text-align: right;">
+                      Undocumented Buffer: <strong>${formatLKR(monthly.undocumentedBufferLkr)}</strong>
+                    </td>
+                  </tr>
+                </table>
+                ${breachedCategoriesHtml}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Section 5: Monthly Domain Rollups -->
           <tr>
             <td style="padding: 8px 24px 24px 24px;">
-              <div style="font-size: 11px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: 1px;">Section 4 // Domain Telemetry Rollups</div>
-              <h2 style="margin: 2px 0 12px 0; font-size: 16px; font-weight: 800; color: #0f172a;">Monthly Domain Rollups (Health, Solar, Bot)</h2>
+              <div style="font-size: 11px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: 1px;">Section 5 // Domain Telemetry Rollups</div>
+              <h2 style="margin: 2px 0 12px 0; font-size: 16px; font-weight: 800; color: #0f172a;">Monthly Domain Rollups (Biometrics, Solar, Bot)</h2>
 
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td width="33%" style="padding-right: 5px; vertical-align: top;">
                     <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px;">
-                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Health &amp; Glycemic</div>
-                      <div style="font-size: 17px; font-weight: 800; color: ${weightDeltaColor}; margin-top: 4px;">
-                        ${monthly.weightDeltaMtdKg > 0 ? "+" : ""}${monthly.weightDeltaMtdKg.toFixed(1)} kg <span style="font-size: 11px; font-weight: 500; color: #64748b;">MTD</span>
+                      <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase;">Biometrics &amp; Fat Loss</div>
+                      <div style="font-size: 16px; font-weight: 800; color: ${weightDeltaColor}; margin-top: 4px;">
+                        ${monthly.weightDeltaMtdKg > 0 ? "+" : ""}${monthly.weightDeltaMtdKg.toFixed(2)} kg <span style="font-size: 11px; font-weight: 500; color: #64748b;">Scale MTD</span>
                       </div>
                       <div style="font-size: 12px; color: #334155; margin-top: 4px;">
-                        HbA1c: <strong>${monthly.hba1cCurrent.toFixed(1)}%</strong> (Target &lt;${monthly.hba1cTarget.toFixed(1)}%)
+                        Expected Fat Loss: <strong style="color: ${expectedFatLossColor};">${monthly.expectedFatLossMtdKg > 0 ? "+" : ""}${monthly.expectedFatLossMtdKg.toFixed(2)} kg</strong>
                       </div>
                       <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
-                        Prior: ${payload.health?.hba1c?.prior?.toFixed(1) ?? "—"}%
+                        Deficit: ${monthly.mtdCalorieDeficitKcal.toLocaleString()} kcal &middot; Target ETA: <strong>${escapeHtml(targetWeightEtaLabel)}</strong>
                       </div>
                     </div>
                   </td>
