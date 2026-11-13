@@ -215,6 +215,8 @@ export type BiometricTelemetry = {
   targetCaloriesExpended: number;
   avgDailyCaloriesExpended: number;
   mtdCaloriesExpended: number;
+  avgDailyCaloriesIntake?: number;
+  mtdCaloriesIntake?: number;
   monthHistory: DailyBiometricHistoryPoint[];
 };
 
@@ -236,6 +238,7 @@ export type HealthData = {
     fastingGoalMinutes: number;
     isFastingActive: boolean;
     fastingStartTime: string | null;
+    fastingEndTime?: string | null;
     streakDays: number;
     weightKg?: number;
     caloriesExpended?: number;

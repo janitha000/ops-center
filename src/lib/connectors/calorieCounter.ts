@@ -2,226 +2,266 @@ import { neon } from "@neondatabase/serverless";
 import { HealthData } from "../types";
 import { fetchBiometricTelemetry } from "./googleFit";
 
-export async function fetchCalorieCounterData(): Promise<HealthData> {
-  const appUrl = process.env.CALORIE_APP_URL || "https://calorie-counter-navy.vercel.app";
-  const now = new Date();
-  const biometricsPromise = fetchBiometricTelemetry();
+const SLT_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
-  // 1. Primary Strategy: Live fetch from deployed Calorie Counter web app
+function getSltDateInfo(epochMs = Date.now()) {
+  const slt = new Date(epochMs + SLT_OFFSET_MS);
+  const year = slt.getUTCFullYear();
+  const monthIdx = slt.getUTCMonth();
+  const day = slt.getUTCDate();
+  const isoDate = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return { year, monthIdx, day, isoDate };
+}
+
+function cleanRscDate(val: string | null | undefined): string | null {
+  if (!val || typeof val !== "string" || val === "$undefined") return null;
+  return val.startsWith("$D") ? val.slice(2) : val;
+}
+
+interface ParsedDaySnapshot {
+  consumedCalories: number;
+  consumedProtein: number;
+  consumedCarbs: number;
+  consumedFat: number;
+  consumedSugar: number;
+  calorieLimit: number;
+  proteinGoal: number;
+  sugarLimit: number;
+  waterGoal: number;
+  latestMealLoggedAt: string | null;
+  yesterdayLastMealAt: string | null;
+  fastBrokenMealAt: string | null;
+}
+
+async function fetchCalorieDaySnapshot(appUrl: string, isoDate: string): Promise<ParsedDaySnapshot | null> {
   try {
-    const res = await fetch(appUrl, {
+    const res = await fetch(`${appUrl}/?date=${isoDate}`, {
       headers: {
         Cookie: "auth_pin=valid",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LifeOpsDashboard/1.0",
       },
-      next: { revalidate: 30 },
+      cache: "no-store",
     });
 
-    if (res.ok) {
-      const html = await res.text();
+    if (!res.ok) return null;
+    const html = await res.text();
 
-      // Extract Next.js RSC flight stream chunks
-      const regex = /self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)/g;
-      let allFlight = "";
-      let match;
-      while ((match = regex.exec(html)) !== null) {
-        allFlight += match[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\") + "\n";
-      }
+    // Decode RSC flight chunks
+    const regex = /self\.__next_f\.push\(\[1,"([\s\S]*?)"\]\)/g;
+    let allFlight = "";
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      allFlight += match[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\") + "\n";
+    }
 
-      // Daily Calories
-      const calMatch = allFlight.match(/"Daily Calories"[\s\S]*?"text-3xl font-black tracking-tight","children":(\d+)/);
-      const calories = calMatch ? parseInt(calMatch[1], 10) : 1009;
+    // Parse TactileDashboard props JSON block directly
+    const idx = allFlight.indexOf('"initialMeals":');
+    if (idx !== -1) {
+      const endIdx = allFlight.indexOf("]]", idx);
+      if (endIdx !== -1) {
+        const rawJson = "{" + allFlight.slice(idx, endIdx);
+        try {
+          const props = JSON.parse(rawJson);
+          const meals = Array.isArray(props.initialMeals) ? props.initialMeals : [];
+          const goals = props.initialGoals || {};
 
-      const limitMatch = allFlight.match(/\/ ",(\d+)," kcal/);
-      const calorieLimit = limitMatch ? parseInt(limitMatch[1], 10) : 1600;
+          // Sort meals chronologically to find first meal with sugar > 0 (fast broken)
+          const sortedMeals = [...meals]
+            .map((m: any) => ({
+              ...m,
+              cleanLoggedAt: cleanRscDate(m.loggedAt),
+            }))
+            .filter((m: any) => m.cleanLoggedAt)
+            .sort(
+              (a: any, b: any) =>
+                new Date(a.cleanLoggedAt).getTime() - new Date(b.cleanLoggedAt).getTime()
+            );
 
-      // Protein
-      const proteinMatch = allFlight.match(/"Protein"[\s\S]*?"children":\[([\d\.]+),"g"\]/);
-      const protein = proteinMatch ? Math.round(parseFloat(proteinMatch[1])) : 32;
+          const fastBrokenMeal = sortedMeals.find((m: any) => Number(m.sugar || 0) > 0);
 
-      // Carbs
-      const carbsMatch = allFlight.match(/"Carbs"[\s\S]*?"children":\[([\d\.]+),"g"\]/);
-      const carbs = carbsMatch ? Math.round(parseFloat(carbsMatch[1])) : 140;
-
-      // Fat
-      const fatMatch = allFlight.match(/"Fat"[\s\S]*?"children":\[([\d\.]+),"g"\]/);
-      const fat = fatMatch ? Math.round(parseFloat(fatMatch[1])) : 39;
-
-      // Sugar from meal objects
-      const specificMealRegex = /\{"id":"[^"]+","userId":"[^"]+","name":"[^"]+",.*?"sugar":([\d\.]+).*?"type":"[^"]+"/g;
-      let specificSugar = 0;
-      let spm;
-      while ((spm = specificMealRegex.exec(allFlight)) !== null) {
-        specificSugar += parseFloat(spm[1]);
-      }
-      const sugar = specificSugar > 0 ? Math.round(specificSugar) : 21;
-
-      // Fasting Start & Elapsed Time
-      const startMatch = allFlight.match(/"fallbackStartTime":"([^"]+)"/);
-      const fastingStartTime = startMatch ? startMatch[1] : "2026-11-11T07:49:59.577Z";
-
-      let fastingMinutes = 65; // Default 1h 05m
-      if (fastingStartTime) {
-        const startDate = new Date(fastingStartTime);
-        if (!isNaN(startDate.getTime())) {
-          fastingMinutes = Math.max(1, Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60)));
+          return {
+            consumedCalories: Math.round(Number(props.consumedCalories || 0)),
+            consumedProtein: Math.round(Number(props.consumedProtein || 0)),
+            consumedCarbs: Math.round(Number(props.consumedCarbs || 0)),
+            consumedFat: Math.round(Number(props.consumedFat || 0)),
+            consumedSugar: Math.round(Number(props.consumedSugar || 0)),
+            calorieLimit: Number(goals.calories || props.defaultTdee || 1600),
+            proteinGoal: Number(goals.protein || 135),
+            sugarLimit: Number(goals.sugar || 20),
+            waterGoal: Number(goals.water || 8),
+            latestMealLoggedAt: cleanRscDate(props.latestMealLoggedAt),
+            yesterdayLastMealAt: cleanRscDate(props.yesterdayLastMealAt),
+            fastBrokenMealAt: fastBrokenMeal ? fastBrokenMeal.cleanLoggedAt : null,
+          };
+        } catch {
+          // fallback to regex extraction below
         }
       }
+    }
 
-      const biometrics = await biometricsPromise;
+    // Fallback regex on raw HTML if JSON slice failed
+    const calMatch = html.match(/consumedCalories\\":(\d+)/);
+    const protMatch = html.match(/consumedProtein\\":([\d\.]+)/);
+    const carbMatch = html.match(/consumedCarbs\\":([\d\.]+)/);
+    const fatMatch = html.match(/consumedFat\\":([\d\.]+)/);
+    const sugMatch = html.match(/consumedSugar\\":([\d\.]+)/);
+    const tdeeMatch = html.match(/defaultTdee\\":(\d+)/);
+    const latestMatch = html.match(/latestMealLoggedAt\\":\\"([^\\"]*)\\"/);
+    const yestMatch = html.match(/yesterdayLastMealAt\\":\\"([^\\"]*)\\"/);
 
+    if (calMatch) {
       return {
-        sourceStatus: "live",
-        lastUpdated: now.toISOString(),
-        today: {
-          calories,
-          calorieLimit,
-          protein,
-          proteinGoal: 135,
-          carbs,
-          fat,
-          sugar,
-          sugarLimit: 25,
-          waterGlasses: 6,
-          waterGoal: 8,
-          fastingMinutes,
-          fastingGoalMinutes: 16 * 60,
-          isFastingActive: true,
-          fastingStartTime,
-          streakDays: 14,
-          weightKg: biometrics.todayWeightKg,
-          caloriesExpended: biometrics.todayCaloriesExpended,
-        },
-        biometrics,
-        hba1c: {
-          current: 6.0,
-          prior: 5.5,
-          target: 5.6,
-          quarterlyHistory: [
-            { quarter: "Q4 25", value: 5.4 },
-            { quarter: "Q1 26", value: 5.5 },
-            { quarter: "Q2 26", value: 5.8 },
-            { quarter: "Q3 26", value: 6.0 },
-          ],
-        },
-        history7d: get7dHealth(calories, protein, carbs, fat, sugar, fastingMinutes),
+        consumedCalories: parseInt(calMatch[1], 10),
+        consumedProtein: protMatch ? Math.round(parseFloat(protMatch[1])) : 0,
+        consumedCarbs: carbMatch ? Math.round(parseFloat(carbMatch[1])) : 0,
+        consumedFat: fatMatch ? Math.round(parseFloat(fatMatch[1])) : 0,
+        consumedSugar: sugMatch ? Math.round(parseFloat(sugMatch[1])) : 0,
+        calorieLimit: tdeeMatch ? parseInt(tdeeMatch[1], 10) : 1600,
+        proteinGoal: 135,
+        sugarLimit: 20,
+        waterGoal: 8,
+        latestMealLoggedAt: latestMatch ? cleanRscDate(latestMatch[1]) : null,
+        yesterdayLastMealAt: yestMatch ? cleanRscDate(yestMatch[1]) : null,
+        fastBrokenMealAt: null,
       };
     }
-  } catch (err) {
-    console.warn("Live Calorie App fetch fallback:", err);
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCalorieCounterData(): Promise<HealthData> {
+  const appUrl = (process.env.CALORIE_APP_URL || "https://calorie-counter-navy.vercel.app").replace(/\/$/, "");
+  const now = new Date();
+  const { year, monthIdx, day: currentDay, isoDate: todayIso } = getSltDateInfo(now.getTime());
+
+  // Fetch Google Fit biometrics + all days of current month from Calorie Counter in parallel
+  const dayIsoList: string[] = [];
+  for (let d = 1; d <= currentDay; d++) {
+    dayIsoList.push(`${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
   }
 
-  // 2. Secondary Strategy: Direct Postgres connection via CALORIE_DATABASE_URL
-  const dbUrl = process.env.CALORIE_DATABASE_URL;
-  if (dbUrl) {
-    try {
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const sql = neon(dbUrl);
-      const meals = await sql`
-        SELECT calories, protein, carbs, fat, sugar, logged_at
-        FROM "Meal"
-        WHERE logged_at >= ${todayStart.toISOString()}
-      `;
+  const [biometrics, ...daySnapshots] = await Promise.all([
+    fetchBiometricTelemetry(),
+    ...dayIsoList.map((iso) => fetchCalorieDaySnapshot(appUrl, iso)),
+  ]);
 
-      const fastLogs = await sql`
-        SELECT start_time, end_time, duration
-        FROM "FastingLog"
-        ORDER BY start_time DESC LIMIT 1
-      `;
+  const intakeByIso = new Map<string, ParsedDaySnapshot>();
+  dayIsoList.forEach((iso, idx) => {
+    const snap = daySnapshots[idx];
+    if (snap) intakeByIso.set(iso, snap);
+  });
 
-      const dailyStats = await sql`
-        SELECT water_glasses, streak
-        FROM "DailyStats"
-        WHERE date = ${todayStart.toISOString().slice(0, 10)}
-        LIMIT 1
-      `;
-
-      let calories = 0;
-      let protein = 0;
-      let carbs = 0;
-      let fat = 0;
-      let sugar = 0;
-
-      for (const m of meals) {
-        calories += Number(m.calories || 0);
-        protein += Number(m.protein || 0);
-        carbs += Number(m.carbs || 0);
-        fat += Number(m.fat || 0);
-        sugar += Number(m.sugar || 0);
-      }
-
-      const latestFast = fastLogs[0];
-      const isFastingActive = latestFast && !latestFast.end_time;
-      let fastingMinutes = 65;
-      if (isFastingActive && latestFast.start_time) {
-        fastingMinutes = Math.floor((now.getTime() - new Date(latestFast.start_time).getTime()) / (1000 * 60));
-      } else if (latestFast?.duration) {
-        fastingMinutes = Number(latestFast.duration);
-      }
-
-      const biometrics = await biometricsPromise;
-
-      return {
-        sourceStatus: "live",
-        lastUpdated: now.toISOString(),
-        today: {
-          calories: calories || 1009,
-          calorieLimit: 1600,
-          protein: protein || 32,
-          proteinGoal: 135,
-          carbs: carbs || 140,
-          fat: fat || 39,
-          sugar: sugar || 21,
-          sugarLimit: 25,
-          waterGlasses: Number(dailyStats[0]?.water_glasses || 6),
-          waterGoal: 8,
-          fastingMinutes,
-          fastingGoalMinutes: 16 * 60,
-          isFastingActive: !!isFastingActive,
-          fastingStartTime: latestFast?.start_time ? String(latestFast.start_time) : "2026-11-11T07:49:59.577Z",
-          streakDays: Number(dailyStats[0]?.streak || 14),
-          weightKg: biometrics.todayWeightKg,
-          caloriesExpended: biometrics.todayCaloriesExpended,
-        },
-        biometrics,
-        hba1c: {
-          current: 6.0,
-          prior: 5.5,
-          target: 5.6,
-          quarterlyHistory: [
-            { quarter: "Q4 25", value: 5.4 },
-            { quarter: "Q1 26", value: 5.5 },
-            { quarter: "Q2 26", value: 5.8 },
-            { quarter: "Q3 26", value: 6.0 },
-          ],
-        },
-        history7d: get7dHealth(calories || 1009, protein || 32, carbs || 140, fat || 39, sugar || 21, fastingMinutes),
-      };
-    } catch (err) {
-      console.warn("Calorie DB connection fallback:", err);
+  // Merge daily calorie intake into biometrics.monthHistory
+  let mtdCaloriesIntake = 0;
+  let activeIntakeDays = 0;
+  for (const pt of biometrics.monthHistory) {
+    const snap = intakeByIso.get(pt.isoDate);
+    const dayIntake = snap ? snap.consumedCalories : 0;
+    pt.caloriesIntake = dayIntake;
+    if (pt.day <= currentDay && dayIntake > 0) {
+      mtdCaloriesIntake += dayIntake;
+      activeIntakeDays++;
     }
   }
+  biometrics.mtdCaloriesIntake = mtdCaloriesIntake;
+  biometrics.avgDailyCaloriesIntake =
+    activeIntakeDays > 0 ? Math.round(mtdCaloriesIntake / activeIntakeDays) : 0;
 
-  // 3. Fallback defaults matching live app snapshot exactly
-  const biometrics = await biometricsPromise;
+  const todaySnap = intakeByIso.get(todayIso);
+
+  if (todaySnap) {
+    // Compute exact Fasting Interval matching Calorie Counter TopHUD.jsx logic:
+    // Last meal yesterday -> First meal today with sugar > 0 (or ongoing to now)
+    let fastingStartTime: string | null =
+      todaySnap.yesterdayLastMealAt || todaySnap.latestMealLoggedAt;
+    let fastingEndTime: string | null = null;
+    let isFastingActive = true;
+    let fastingMinutes = 0;
+
+    if (todaySnap.yesterdayLastMealAt && todaySnap.fastBrokenMealAt) {
+      fastingStartTime = todaySnap.yesterdayLastMealAt;
+      fastingEndTime = todaySnap.fastBrokenMealAt;
+      isFastingActive = false;
+      const startMs = new Date(todaySnap.yesterdayLastMealAt).getTime();
+      const endMs = new Date(todaySnap.fastBrokenMealAt).getTime();
+      if (!isNaN(startMs) && !isNaN(endMs)) {
+        fastingMinutes = Math.max(1, Math.floor((endMs - startMs) / 60000));
+      }
+    } else if (todaySnap.yesterdayLastMealAt && !todaySnap.fastBrokenMealAt) {
+      fastingStartTime = todaySnap.yesterdayLastMealAt;
+      fastingEndTime = null;
+      isFastingActive = true;
+      const startMs = new Date(todaySnap.yesterdayLastMealAt).getTime();
+      if (!isNaN(startMs)) {
+        fastingMinutes = Math.max(1, Math.floor((now.getTime() - startMs) / 60000));
+      }
+    } else if (todaySnap.latestMealLoggedAt) {
+      fastingStartTime = todaySnap.latestMealLoggedAt;
+      fastingEndTime = null;
+      isFastingActive = true;
+      const startMs = new Date(todaySnap.latestMealLoggedAt).getTime();
+      if (!isNaN(startMs)) {
+        fastingMinutes = Math.max(1, Math.floor((now.getTime() - startMs) / 60000));
+      }
+    }
+
+    return {
+      sourceStatus: "live",
+      lastUpdated: now.toISOString(),
+      today: {
+        calories: todaySnap.consumedCalories,
+        calorieLimit: todaySnap.calorieLimit,
+        protein: todaySnap.consumedProtein,
+        proteinGoal: todaySnap.proteinGoal,
+        carbs: todaySnap.consumedCarbs,
+        fat: todaySnap.consumedFat,
+        sugar: todaySnap.consumedSugar,
+        sugarLimit: todaySnap.sugarLimit,
+        waterGlasses: 6,
+        waterGoal: todaySnap.waterGoal,
+        fastingMinutes,
+        fastingGoalMinutes: 16 * 60,
+        isFastingActive,
+        fastingStartTime,
+        fastingEndTime,
+        streakDays: 14,
+        weightKg: biometrics.todayWeightKg,
+        caloriesExpended: biometrics.todayCaloriesExpended,
+      },
+      biometrics,
+      hba1c: {
+        current: 6.0,
+        prior: 5.5,
+        target: 5.6,
+        quarterlyHistory: [],
+      },
+      history7d: buildRecent7dHistory(dayIsoList, intakeByIso, fastingMinutes),
+    };
+  }
+
+  // Fallback if Calorie Counter web app is unreachable
   return {
     sourceStatus: "fallback",
     lastUpdated: now.toISOString(),
     today: {
-      calories: 1009,
+      calories: 0,
       calorieLimit: 1600,
-      protein: 32,
+      protein: 0,
       proteinGoal: 135,
-      carbs: 140,
-      fat: 39,
-      sugar: 21,
-      sugarLimit: 25,
+      carbs: 0,
+      fat: 0,
+      sugar: 0,
+      sugarLimit: 20,
       waterGlasses: 6,
       waterGoal: 8,
-      fastingMinutes: 65, // 1h 05m
+      fastingMinutes: 600,
       fastingGoalMinutes: 16 * 60,
       isFastingActive: true,
-      fastingStartTime: "2026-11-11T07:49:59.577Z",
+      fastingStartTime: null,
+      fastingEndTime: null,
       streakDays: 14,
       weightKg: biometrics.todayWeightKg,
       caloriesExpended: biometrics.todayCaloriesExpended,
@@ -231,33 +271,44 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
       current: 6.0,
       prior: 5.5,
       target: 5.6,
-      quarterlyHistory: [
-        { quarter: "Q4 25", value: 5.4 },
-        { quarter: "Q1 26", value: 5.5 },
-        { quarter: "Q2 26", value: 5.8 },
-        { quarter: "Q3 26", value: 6.0 },
-      ],
+      quarterlyHistory: [],
     },
-    history7d: get7dHealth(1009, 32, 140, 39, 21, 65),
+    history7d: buildRecent7dHistory(dayIsoList, intakeByIso, 600),
   };
 }
 
-function get7dHealth(
-  todayCal: number,
-  todayProtein: number,
-  todayCarbs: number,
-  todayFat: number,
-  todaySugar: number,
+function buildRecent7dHistory(
+  dayIsoList: string[],
+  intakeByIso: Map<string, ParsedDaySnapshot>,
   todayFastMin: number
 ) {
-  const fastingHours = Number((todayFastMin / 60).toFixed(1));
-  return [
-    { date: "2026-11-05", dayLabel: "Thu", calories: 1540, protein: 138, carbs: 120, fat: 52, sugar: 21, fastingHours: 16.5 },
-    { date: "2026-11-06", dayLabel: "Fri", calories: 1620, protein: 125, carbs: 140, fat: 58, sugar: 24, fastingHours: 16.0 },
-    { date: "2026-11-07", dayLabel: "Sat", calories: 1780, protein: 110, carbs: 165, fat: 64, sugar: 32, fastingHours: 14.5 },
-    { date: "2026-11-08", dayLabel: "Sun", calories: 1690, protein: 130, carbs: 145, fat: 55, sugar: 22, fastingHours: 15.5 },
-    { date: "2026-11-09", dayLabel: "Mon", calories: 1480, protein: 142, carbs: 115, fat: 48, sugar: 16, fastingHours: 16.2 },
-    { date: "2026-11-10", dayLabel: "Tue", calories: 1510, protein: 136, carbs: 125, fat: 50, sugar: 19, fastingHours: 16.8 },
-    { date: "2026-11-11", dayLabel: "Today", calories: todayCal, protein: todayProtein, carbs: todayCarbs, fat: todayFat, sugar: todaySugar, fastingHours },
-  ];
+  const recentIsos = dayIsoList.slice(-7);
+  return recentIsos.map((iso, idx) => {
+    const snap = intakeByIso.get(iso);
+    const d = new Date(iso + "T00:00:00Z");
+    const isLast = idx === recentIsos.length - 1;
+    const dayLabel = isLast
+      ? "Today"
+      : d.toLocaleString("en-US", { weekday: "short", timeZone: "UTC" });
+
+    let fastingHours = isLast ? Number((todayFastMin / 60).toFixed(1)) : 16.0;
+    if (snap && snap.yesterdayLastMealAt && snap.fastBrokenMealAt) {
+      const diffHrs =
+        (new Date(snap.fastBrokenMealAt).getTime() -
+          new Date(snap.yesterdayLastMealAt).getTime()) /
+        3600_000;
+      if (diffHrs > 0) fastingHours = Number(diffHrs.toFixed(1));
+    }
+
+    return {
+      date: iso,
+      dayLabel,
+      calories: snap?.consumedCalories ?? 0,
+      protein: snap?.consumedProtein ?? 0,
+      carbs: snap?.consumedCarbs ?? 0,
+      fat: snap?.consumedFat ?? 0,
+      sugar: snap?.consumedSugar ?? 0,
+      fastingHours,
+    };
+  });
 }
