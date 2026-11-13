@@ -81,7 +81,9 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
 
   const todayCaloriesExpended = biometrics?.todayCaloriesExpended ?? today.caloriesExpended ?? 0;
   const targetCaloriesExpended = biometrics?.targetCaloriesExpended ?? 2200;
-  const expendedPct = Math.min(140, Math.round((todayCaloriesExpended / targetCaloriesExpended) * 100));
+  const expendedPct = Math.min(150, Math.round((todayCaloriesExpended / targetCaloriesExpended) * 100));
+  const remainingToBurn = Math.max(0, targetCaloriesExpended - todayCaloriesExpended);
+  const isExpenditureGoalMet = todayCaloriesExpended >= targetCaloriesExpended;
   const netCalorieBalance = currentCalories - todayCaloriesExpended;
 
   const googleFitConnected = biometrics?.googleFitConnected ?? false;
@@ -264,7 +266,62 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
               </div>
             </div>
 
-            {/* CARD 2: FASTING INTERVAL & PROGRESS BAR */}
+            {/* CARD 2: CURRENT CALORIE EXPENDITURE & TARGET PROGRESS BAR (GOOGLE FIT) */}
+            <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm">
+              <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1">
+                <span className="flex items-center gap-1.5 text-amber-300">
+                  <Zap className="h-3 w-3 text-amber-400" />
+                  <span>Current Calorie Expenditure</span>
+                </span>
+                <span className="text-slate-400">
+                  Target: <span className="text-amber-400 font-bold">{targetCaloriesExpended.toLocaleString()} kcal</span>
+                </span>
+              </div>
+
+              {/* Primary Expenditure Readout */}
+              <div className="flex items-baseline justify-between font-mono mb-1.5">
+                <div className="text-xl font-bold text-amber-300 tracking-tight">
+                  {todayCaloriesExpended.toLocaleString()} <span className="text-xs font-normal text-slate-400">/ {targetCaloriesExpended.toLocaleString()} kcal</span>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-bold ${isExpenditureGoalMet ? "text-emerald-400" : "text-amber-400"}`}>
+                    {expendedPct}%
+                  </span>
+                  <span className={`block text-[8px] font-semibold uppercase tracking-wider ${isExpenditureGoalMet ? "text-emerald-400" : "text-amber-300"}`}>
+                    {isExpenditureGoalMet
+                      ? `+${(todayCaloriesExpended - targetCaloriesExpended).toLocaleString()} KCAL OVER GOAL`
+                      : `${remainingToBurn.toLocaleString()} KCAL TO GOAL`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Expenditure Target Progress Bar */}
+              <div className="space-y-1">
+                <div className="h-2 w-full bg-[#072421] rounded-none overflow-hidden relative">
+                  <div
+                    style={{ width: `${Math.min(100, expendedPct)}%` }}
+                    className={`h-full transition-all duration-500 ${
+                      isExpenditureGoalMet
+                        ? "bg-emerald-400 shadow-[0_0_8px_#34d399]"
+                        : expendedPct >= 75
+                        ? "bg-amber-400 shadow-[0_0_6px_#fbbf24]"
+                        : "bg-amber-500/90"
+                    }`}
+                  />
+                  <div className="absolute top-0 bottom-0 left-[100%] w-0.5 bg-amber-400" />
+                </div>
+
+                <div className="flex justify-between text-[8px] font-mono text-slate-500 px-0.5">
+                  <span>0</span>
+                  <span className="text-amber-400 font-bold">
+                    {expendedPct}% • Net: {netCalorieBalance > 0 ? `+${netCalorieBalance}` : netCalorieBalance} kcal
+                  </span>
+                  <span className="text-amber-300 font-semibold">{targetCaloriesExpended}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CARD 3: FASTING INTERVAL & PROGRESS BAR */}
             <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm">
               <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1">
                 <span className="flex items-center gap-1.5 text-teal-300">
@@ -337,69 +394,35 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
               </div>
             </div>
 
-            {/* CARD 3: TODAY WEIGHT & CALORIE EXPENDITURE (GOOGLE FIT / OKOK / SAMSUNG HEALTH) */}
+            {/* CARD 4: TODAY WEIGHT (GOOGLE FIT / OKOK) */}
             <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm font-mono">
-              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
+              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
                 <span className="flex items-center gap-1.5 text-teal-300">
                   <Scale className="h-3 w-3 text-teal-400" />
-                  <span>Today Weight &amp; Calorie Expenditure</span>
+                  <span>Today Weight (OKOK / Google Fit)</span>
                 </span>
                 <button
                   onClick={() => setIsGfitModalOpen(true)}
                   className="text-[8px] text-teal-400 hover:text-teal-200 underline uppercase font-bold"
                 >
-                  {googleFitConnected ? "Google Fit Live" : "Sync / Edit"}
+                  {googleFitConnected ? `Target: ${targetWeightKg.toFixed(1)} kg` : "Sync / Edit"}
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {/* Left Box: Today's Weight (OKOK / Google Fit) */}
-                <div className="bg-[#041d1b] p-2 rounded-sm border border-[#0d3b38]/80 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[8px] text-slate-400 uppercase">
-                    <span>Today Weight</span>
-                    <span className={weightDeltaMtdKg <= 0 ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
-                      {weightDeltaMtdKg > 0 ? `+${weightDeltaMtdKg}` : weightDeltaMtdKg} kg MTD
-                    </span>
-                  </div>
-                  <div className="my-1 flex items-baseline justify-between">
-                    <span className="text-lg font-bold text-white tracking-tight">
-                      {todayWeightKg > 0 ? todayWeightKg.toFixed(1) : "—"} <span className="text-[10px] font-normal text-teal-300">kg</span>
-                    </span>
-                    <span className="text-[8.5px] text-slate-400">
-                      Goal: <strong className="text-teal-300">{targetWeightKg.toFixed(1)}kg</strong>
-                    </span>
-                  </div>
-                  <div className="text-[8px] text-slate-500 flex items-center justify-between pt-1 border-t border-[#0d3b38]/60">
-                    <span>OKOK / GFit</span>
-                    <span className={weightToTargetKg <= 0 ? "text-emerald-400 font-semibold" : "text-teal-300"}>
-                      {todayWeightKg <= 0 ? "Await reading" : weightToTargetKg <= 0 ? "Target Reached" : `${weightToTargetKg.toFixed(1)} kg to goal`}
-                    </span>
-                  </div>
+              <div className="flex items-baseline justify-between">
+                <div className="text-xl font-bold text-white tracking-tight">
+                  {todayWeightKg > 0 ? todayWeightKg.toFixed(1) : "—"} <span className="text-xs font-normal text-teal-300">kg</span>
+                  <span className="ml-2 text-[10px] font-normal text-slate-400">
+                    (Goal: {targetWeightKg.toFixed(1)} kg)
+                  </span>
                 </div>
-
-                {/* Right Box: Today's Calorie Expenditure (Samsung Health / Google Fit) */}
-                <div className="bg-[#041d1b] p-2 rounded-sm border border-[#0d3b38]/80 flex flex-col justify-between">
-                  <div className="flex items-center justify-between text-[8px] text-slate-400 uppercase">
-                    <span className="flex items-center gap-1">
-                      <Zap className="h-2.5 w-2.5 text-amber-400" />
-                      <span>Expenditure</span>
-                    </span>
-                    <span className="text-amber-300 font-bold">{expendedPct}%</span>
-                  </div>
-                  <div className="my-1 flex items-baseline justify-between">
-                    <span className="text-lg font-bold text-amber-300 tracking-tight">
-                      {todayCaloriesExpended.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">kcal</span>
-                    </span>
-                    <span className="text-[8.5px] text-slate-400">
-                      Goal: <strong className="text-slate-300">{targetCaloriesExpended}</strong>
-                    </span>
-                  </div>
-                  <div className="text-[8px] text-slate-500 flex items-center justify-between pt-1 border-t border-[#0d3b38]/60">
-                    <span>Net Balance</span>
-                    <span className={netCalorieBalance <= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
-                      {netCalorieBalance > 0 ? `+${netCalorieBalance}` : netCalorieBalance} kcal
-                    </span>
-                  </div>
+                <div className="text-right">
+                  <span className={`text-xs font-bold ${weightDeltaMtdKg <= 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                    {weightDeltaMtdKg > 0 ? `+${weightDeltaMtdKg}` : weightDeltaMtdKg} kg MTD
+                  </span>
+                  <span className="block text-[8px] font-semibold text-teal-300 uppercase tracking-wider">
+                    {todayWeightKg <= 0 ? "AWAIT READING" : weightToTargetKg <= 0 ? "TARGET REACHED" : `${weightToTargetKg.toFixed(1)} KG TO GOAL`}
+                  </span>
                 </div>
               </div>
             </div>
