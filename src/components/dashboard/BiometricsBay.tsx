@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
-import { Clock, Activity, Flame, Droplets, Sparkles, Calendar, RefreshCw } from "lucide-react";
+import { Clock, Flame, Droplets, Sparkles, RefreshCw, Scale, Settings2, Zap } from "lucide-react";
 import { HealthData } from "@/lib/types";
+import { GoogleFitModal } from "./GoogleFitModal";
 
 interface BiometricsBayProps {
   health: HealthData;
@@ -12,7 +13,8 @@ interface BiometricsBayProps {
 
 export function BiometricsBay({ health, onRefresh, isRefreshing = false }: BiometricsBayProps) {
   const [viewMode, setViewMode] = useState<"day" | "month">("day");
-  const { today, hba1c, history7d = [] } = health;
+  const [isGfitModalOpen, setIsGfitModalOpen] = useState(false);
+  const { today, biometrics } = health;
 
   // ── DAY VIEW METRICS ──
   const calorieLimit = today.calorieLimit || 1600;
@@ -21,7 +23,7 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
   const remainingCalories = Math.max(0, calorieLimit - currentCalories);
   const isCalorieSurplus = currentCalories > calorieLimit;
 
-  // Macros Targets & Deficit/Surplus (matching user's Calorie Counter app)
+  // Macros Targets & Deficit/Surplus
   const proteinGoal = today.proteinGoal || 135;
   const proteinLeft = Math.max(0, proteinGoal - today.protein);
   const proteinPct = Math.min(100, Math.round((today.protein / proteinGoal) * 100));
@@ -42,7 +44,6 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
   const fastingElapsedDec = (today.fastingMinutes / 60).toFixed(1);
   const fastingPct = Math.min(100, Math.round((today.fastingMinutes / (fastingTargetHours * 60)) * 100));
 
-  // Format start time if available
   let startTimeLabel = "1:19 PM";
   if (today.fastingStartTime) {
     try {
@@ -58,21 +59,34 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
   const totalSegments = 16;
   const filledSegments = Math.min(totalSegments, Math.floor((today.fastingMinutes / (16 * 60)) * totalSegments));
 
-  // ── MONTH VIEW METRICS (MTD Day 11 of 30) ──
+  // ── BIOMETRICS: WEIGHT & CALORIE EXPENDITURE (GOOGLE FIT / OKOK / SAMSUNG HEALTH) ──
   const now = new Date();
-  const currentDay = now.getDate(); // 11
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(); // 30
+  const currentDay = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const monthName = now.toLocaleString("en-US", { month: "short" });
 
-  const avgCalorieIntake = 1487;
-  const mtdConsumedCalories = avgCalorieIntake * currentDay;
-  const mtdTargetCalories = calorieLimit * currentDay;
-  const monthlyTotalBudget = calorieLimit * daysInMonth;
-  const mtdCaloriePct = Math.round((mtdConsumedCalories / mtdTargetCalories) * 100);
-  const mtdNetDeficit = mtdTargetCalories - mtdConsumedCalories;
+  const todayWeightKg = biometrics?.todayWeightKg ?? today.weightKg ?? 75.2;
+  const targetWeightKg = biometrics?.targetWeightKg ?? 72.0;
+  const startMonthWeightKg = biometrics?.startMonthWeightKg ?? 76.4;
+  const weightDeltaMtdKg = biometrics?.weightDeltaMtdKg ?? Number((todayWeightKg - startMonthWeightKg).toFixed(1));
+  const weightToTargetKg = Number((todayWeightKg - targetWeightKg).toFixed(1));
 
-  const mtdFastingHitDays = 10;
-  const mtdFastingCompliancePct = Math.round((mtdFastingHitDays / currentDay) * 100);
-  const avgFastingHours = 15.9;
+  const todayCaloriesExpended = biometrics?.todayCaloriesExpended ?? today.caloriesExpended ?? 2140;
+  const targetCaloriesExpended = biometrics?.targetCaloriesExpended ?? 2200;
+  const expendedPct = Math.min(140, Math.round((todayCaloriesExpended / targetCaloriesExpended) * 100));
+  const netCalorieBalance = currentCalories - todayCaloriesExpended; // negative = burn deficit
+
+  const googleFitConnected = biometrics?.googleFitConnected ?? false;
+  const monthHistory = biometrics?.monthHistory ?? [];
+  const activeHistoryDays = monthHistory.filter((d) => d.day <= currentDay && d.weightKg !== null);
+  const avgDailyCaloriesExpended = biometrics?.avgDailyCaloriesExpended ?? 2180;
+  const mtdCaloriesExpended = biometrics?.mtdCaloriesExpended ?? avgDailyCaloriesExpended * currentDay;
+
+  // Compute min/max for dynamic scaling in Month View Weight chart
+  const weightValues = activeHistoryDays.map((d) => d.weightKg as number);
+  const minWeight = weightValues.length > 0 ? Math.min(...weightValues, targetWeightKg) - 0.5 : 71.5;
+  const maxWeight = weightValues.length > 0 ? Math.max(...weightValues) + 0.5 : 77.0;
+  const weightRange = Math.max(1, maxWeight - minWeight);
 
   return (
     <div className="bg-[#041615]/90 border border-[#0d3b38] border-t border-t-white/10 rounded-md p-3.5 flex flex-col justify-between h-full font-sans">
@@ -94,8 +108,20 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
             )}
           </div>
 
-          {/* Interactive Day View vs Month View Switcher & Zone Refresh */}
+          {/* Interactive Day View vs Month View Switcher & Google Fit Setup */}
           <div className="flex items-center gap-1 font-mono text-[9px]">
+            <button
+              onClick={() => setIsGfitModalOpen(true)}
+              className={`px-1.5 py-0.5 rounded-sm font-bold flex items-center gap-1 transition-all border ${
+                googleFitConnected
+                  ? "bg-emerald-950/70 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/70"
+                  : "bg-[#062422] text-teal-300 border-teal-700/60 hover:bg-[#0c3c39]"
+              }`}
+              title="Configure Google Fit OAuth (OKOK & Samsung Health)"
+            >
+              <Settings2 className="h-2.5 w-2.5" />
+              <span>{googleFitConnected ? "GFIT" : "CONNECT GFIT"}</span>
+            </button>
             <button
               onClick={() => setViewMode("day")}
               className={`px-2 py-0.5 rounded-sm font-bold transition-all ${
@@ -128,7 +154,7 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
         </div>
 
         {/* ══════════════════════════════════════════════════════════════════════
-            TAB 1: DAY VIEW (TODAY'S LIVE METABOLIC VITALS)
+            TAB 1: DAY VIEW (TODAY'S LIVE METABOLIC & BIOMETRIC VITALS)
         ══════════════════════════════════════════════════════════════════════ */}
         {viewMode === "day" && (
           <div className="space-y-2.5">
@@ -286,166 +312,231 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
               </div>
             </div>
 
-            {/* CARD 3: GLYCEMIC MARKER (HBA1C) */}
-            <div className="bg-[#020d0c] border border-[#0d3b38] p-2 rounded-sm">
-              <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1">
+            {/* CARD 3: TODAY WEIGHT & CALORIE EXPENDITURE (GOOGLE FIT / OKOK / SAMSUNG HEALTH) */}
+            <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm font-mono">
+              <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
                 <span className="flex items-center gap-1.5 text-teal-300">
-                  <Activity className="h-3 w-3 text-teal-400" />
-                  <span>Glycemic Marker (HbA1c)</span>
+                  <Scale className="h-3 w-3 text-teal-400" />
+                  <span>Today Weight &amp; Calorie Expenditure</span>
                 </span>
-                <span className="text-slate-400">
-                  Target: <span className="text-emerald-400 font-semibold">&lt;{hba1c.target}%</span>
-                </span>
+                <button
+                  onClick={() => setIsGfitModalOpen(true)}
+                  className="text-[8px] text-teal-400 hover:text-teal-200 underline uppercase font-bold"
+                >
+                  {googleFitConnected ? "Google Fit Live" : "Sync / Edit"}
+                </button>
               </div>
 
-              <div className="grid grid-cols-4 gap-1 text-center font-mono text-[10px] mt-1">
-                {hba1c.quarterlyHistory.map((q) => (
-                  <div key={q.quarter} className="bg-[#041d1b] p-1 rounded-sm border border-[#0d3b38]/60">
-                    <span className="block text-[8px] text-slate-500 uppercase">{q.quarter}</span>
-                    <span className={`font-bold ${q.value <= 5.6 ? "text-emerald-400" : "text-amber-400"}`}>
-                      {q.value.toFixed(1)}%
+              <div className="grid grid-cols-2 gap-2">
+                {/* Left Box: Today's Weight (OKOK / Google Fit) */}
+                <div className="bg-[#041d1b] p-2 rounded-sm border border-[#0d3b38]/80 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[8px] text-slate-400 uppercase">
+                    <span>Today Weight</span>
+                    <span className={weightDeltaMtdKg <= 0 ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                      {weightDeltaMtdKg > 0 ? `+${weightDeltaMtdKg}` : weightDeltaMtdKg} kg MTD
                     </span>
                   </div>
-                ))}
+                  <div className="my-1 flex items-baseline justify-between">
+                    <span className="text-lg font-bold text-white tracking-tight">
+                      {todayWeightKg.toFixed(1)} <span className="text-[10px] font-normal text-teal-300">kg</span>
+                    </span>
+                    <span className="text-[8.5px] text-slate-400">
+                      Goal: <strong className="text-teal-300">{targetWeightKg.toFixed(1)}kg</strong>
+                    </span>
+                  </div>
+                  <div className="text-[8px] text-slate-500 flex items-center justify-between pt-1 border-t border-[#0d3b38]/60">
+                    <span>OKOK / GFit</span>
+                    <span className={weightToTargetKg <= 0 ? "text-emerald-400 font-semibold" : "text-teal-300"}>
+                      {weightToTargetKg <= 0 ? "Target Reached" : `${weightToTargetKg.toFixed(1)} kg to goal`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right Box: Today's Calorie Expenditure (Samsung Health / Google Fit) */}
+                <div className="bg-[#041d1b] p-2 rounded-sm border border-[#0d3b38]/80 flex flex-col justify-between">
+                  <div className="flex items-center justify-between text-[8px] text-slate-400 uppercase">
+                    <span className="flex items-center gap-1">
+                      <Zap className="h-2.5 w-2.5 text-amber-400" />
+                      <span>Expenditure</span>
+                    </span>
+                    <span className="text-amber-300 font-bold">{expendedPct}%</span>
+                  </div>
+                  <div className="my-1 flex items-baseline justify-between">
+                    <span className="text-lg font-bold text-amber-300 tracking-tight">
+                      {todayCaloriesExpended.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">kcal</span>
+                    </span>
+                    <span className="text-[8.5px] text-slate-400">
+                      Goal: <strong className="text-slate-300">{targetCaloriesExpended}</strong>
+                    </span>
+                  </div>
+                  <div className="text-[8px] text-slate-500 flex items-center justify-between pt-1 border-t border-[#0d3b38]/60">
+                    <span>Net Balance</span>
+                    <span className={netCalorieBalance <= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                      {netCalorieBalance > 0 ? `+${netCalorieBalance}` : netCalorieBalance} kcal
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════════
-            TAB 2: MONTH VIEW (MTD AGGREGATES, CONSISTENCY & PACING)
+            TAB 2: MONTH VIEW (MONTHLY WEIGHT & CALORIE EXPENDITURE HISTORY)
         ══════════════════════════════════════════════════════════════════════ */}
         {viewMode === "month" && (
           <div className="space-y-2.5 font-mono">
-            {/* CARD 1: MONTH-TO-DATE CALORIE PACING & DEFICIT */}
+            {/* CARD 1: MONTHLY WEIGHT HISTORY (OKOK / GOOGLE FIT) */}
             <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm">
               <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
                 <span className="flex items-center gap-1.5 text-teal-300">
-                  <Calendar className="h-3 w-3 text-teal-400" />
-                  <span>MTD Calorie Trajectory (Day {currentDay}/{daysInMonth})</span>
+                  <Scale className="h-3 w-3 text-teal-400" />
+                  <span>{monthName} Weight History (Day {currentDay}/{daysInMonth})</span>
                 </span>
-                <span className="text-emerald-400 font-bold">{mtdCaloriePct}% ON PACE</span>
+                <span className={weightDeltaMtdKg <= 0 ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                  {weightDeltaMtdKg > 0 ? `+${weightDeltaMtdKg}` : weightDeltaMtdKg} KG MTD
+                </span>
               </div>
 
-              {/* Monthly Cumulative Consumption */}
               <div className="flex items-baseline justify-between mb-1.5">
-                <div className="text-xl font-bold text-teal-300 tracking-tight">
-                  {mtdConsumedCalories.toLocaleString()} <span className="text-xs font-normal text-slate-400">/ {mtdTargetCalories.toLocaleString()} kcal MTD</span>
+                <div className="text-lg font-bold text-white tracking-tight">
+                  {todayWeightKg.toFixed(1)} kg <span className="text-[10px] font-normal text-slate-400">(Start: {startMonthWeightKg.toFixed(1)} kg)</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-emerald-400">-{mtdNetDeficit.toLocaleString()} kcal</span>
-                  <span className="block text-[8px] text-slate-500 uppercase tracking-wider">Net Monthly Deficit</span>
+                  <span className="text-[10px] font-bold text-teal-300">Target: {targetWeightKg.toFixed(1)} kg</span>
                 </div>
               </div>
 
-              {/* Monthly Timeline Progress Bar */}
+              {/* Day-by-Day Weight History Bars across Month */}
               <div className="space-y-1">
-                <div className="h-2 w-full bg-[#072421] rounded-none overflow-hidden relative flex">
-                  {/* Actual MTD burn fill */}
-                  <div
-                    style={{ width: `${(mtdConsumedCalories / monthlyTotalBudget) * 100}%` }}
-                    className="h-full bg-teal-500 shadow-[0_0_6px_#14b8a6]"
-                    title={`MTD Consumed: ${mtdConsumedCalories.toLocaleString()} kcal`}
-                  />
-                  {/* Expected Day 11 pace reference line */}
-                  <div
-                    style={{ left: `${(currentDay / daysInMonth) * 100}%` }}
-                    className="absolute top-0 bottom-0 w-0.5 bg-amber-400 shadow-[0_0_4px_#fbbf24]"
-                    title={`Day ${currentDay} Pace Reference`}
-                  />
-                </div>
+                <div className="flex items-end gap-0.5 h-12 w-full bg-[#061e1c] p-1 border border-[#0d3b38]/60">
+                  {Array.from({ length: daysInMonth }).map((_, idx) => {
+                    const dayNum = idx + 1;
+                    const entry = monthHistory.find((m) => m.day === dayNum);
+                    const hasWeight = dayNum <= currentDay && entry?.weightKg !== null && entry?.weightKg !== undefined;
+                    const w = hasWeight ? (entry!.weightKg as number) : 0;
+                    const heightPct = hasWeight
+                      ? Math.min(100, Math.max(18, Math.round(((w - minWeight) / weightRange) * 100)))
+                      : 8;
+                    const isToday = dayNum === currentDay;
 
+                    return (
+                      <div key={dayNum} className="flex-1 h-full flex items-end">
+                        <div
+                          style={{ height: `${heightPct}%` }}
+                          className={`w-full rounded-t-[1px] transition-all ${
+                            !hasWeight
+                              ? "bg-[#031211]"
+                              : isToday
+                              ? "bg-emerald-400 shadow-[0_0_5px_#34d399]"
+                              : "bg-teal-500/80 hover:bg-teal-300"
+                          }`}
+                          title={hasWeight ? `${monthName} ${dayNum}: ${w.toFixed(1)} kg` : `${monthName} ${dayNum}: Upcoming`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="flex justify-between text-[8px] text-slate-500 px-0.5">
-                  <span>Day 1 (0 kcal)</span>
-                  <span className="text-amber-400 font-semibold">Day {currentDay} Target ({mtdTargetCalories.toLocaleString()})</span>
-                  <span>Day {daysInMonth} ({monthlyTotalBudget.toLocaleString()} kcal)</span>
-                </div>
-              </div>
-
-              {/* Monthly Average Daily Telemetry */}
-              <div className="grid grid-cols-3 gap-1.5 pt-2 mt-2 border-t border-[#0d3b38]/80 text-center">
-                <div className="bg-[#041d1b] p-1 rounded-sm border border-[#0d3b38]/60">
-                  <span className="block text-[8px] text-slate-500 uppercase">Daily Average</span>
-                  <span className="text-[10px] font-bold text-teal-300">{avgCalorieIntake} kcal/d</span>
-                </div>
-                <div className="bg-[#041d1b] p-1 rounded-sm border border-[#0d3b38]/60">
-                  <span className="block text-[8px] text-slate-500 uppercase">Daily Budget</span>
-                  <span className="text-[10px] font-bold text-slate-200">{calorieLimit} kcal/d</span>
-                </div>
-                <div className="bg-[#041d1b] p-1 rounded-sm border border-[#0d3b38]/60">
-                  <span className="block text-[8px] text-slate-500 uppercase">Est Fat Deficit</span>
-                  <span className="text-[10px] font-bold text-emerald-400">-0.22 kg</span>
+                  <span>{monthName} 1 ({startMonthWeightKg.toFixed(1)} kg)</span>
+                  <span className="text-emerald-400 font-semibold">Today ({todayWeightKg.toFixed(1)} kg)</span>
+                  <span>{monthName} {daysInMonth}</span>
                 </div>
               </div>
             </div>
 
-            {/* CARD 2: MONTHLY FASTING COMPLIANCE & CONSISTENCY */}
+            {/* CARD 2: MONTHLY CALORIE EXPENDITURE HISTORY (SAMSUNG HEALTH / GOOGLE FIT) */}
             <div className="bg-[#020d0c] border border-[#0d3b38] p-2.5 rounded-sm">
               <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
-                <span className="flex items-center gap-1.5 text-teal-300">
-                  <Clock className="h-3 w-3 text-teal-400" />
-                  <span>Monthly Fasting Compliance</span>
+                <span className="flex items-center gap-1.5 text-amber-300">
+                  <Zap className="h-3 w-3 text-amber-400" />
+                  <span>{monthName} Calorie Expenditure History</span>
                 </span>
-                <span className="text-teal-400 font-bold">{mtdFastingCompliancePct}% COMPLIANT</span>
+                <span className="text-amber-300 font-bold">AVG: {avgDailyCaloriesExpended} KCAL/D</span>
               </div>
 
               <div className="flex items-baseline justify-between mb-1.5">
-                <div className="text-xl font-bold text-teal-300 tracking-tight">
-                  {mtdFastingHitDays} <span className="text-xs font-normal text-slate-400">/ {currentDay} Days Met (≥16h)</span>
+                <div className="text-lg font-bold text-amber-300 tracking-tight">
+                  {mtdCaloriesExpended.toLocaleString()} <span className="text-[10px] font-normal text-slate-400">kcal burned MTD</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs font-bold text-teal-400">{avgFastingHours}h/day</span>
-                  <span className="block text-[8px] text-slate-500 uppercase tracking-wider">Avg Fast Duration</span>
+                  <span className="text-[10px] font-bold text-emerald-400">
+                    Goal: {targetCaloriesExpended} kcal/d
+                  </span>
                 </div>
               </div>
 
-              {/* Day-by-Day Compliance Status Grid (Nov 1 to Nov 11) */}
+              {/* Day-by-Day Calorie Expenditure Bars across Month */}
               <div className="space-y-1">
-                <div className="flex gap-1 h-2 w-full bg-[#072421] p-0.5">
-                  {Array.from({ length: currentDay }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-full flex-1 ${i === 6 ? "bg-amber-400" : "bg-teal-400"}`}
-                      title={`Nov ${i + 1}: ${i === 6 ? "14.5h Fast" : "≥16.0h Fast Met"}`}
-                    />
-                  ))}
-                  {Array.from({ length: daysInMonth - currentDay }).map((_, i) => (
-                    <div
-                      key={`rem-${i}`}
-                      className="h-full flex-1 bg-[#031514]"
-                      title={`Nov ${currentDay + i + 1} (Upcoming)`}
-                    />
-                  ))}
-                </div>
+                <div className="flex items-end gap-0.5 h-12 w-full bg-[#061e1c] p-1 border border-[#0d3b38]/60">
+                  {Array.from({ length: daysInMonth }).map((_, idx) => {
+                    const dayNum = idx + 1;
+                    const entry = monthHistory.find((m) => m.day === dayNum);
+                    const hasExp = dayNum <= currentDay && (entry?.caloriesExpended || 0) > 0;
+                    const exp = hasExp ? entry!.caloriesExpended : 0;
+                    const heightPct = hasExp
+                      ? Math.min(100, Math.max(15, Math.round((exp / 2800) * 100)))
+                      : 8;
+                    const isToday = dayNum === currentDay;
+                    const hitTarget = exp >= targetCaloriesExpended;
 
+                    return (
+                      <div key={dayNum} className="flex-1 h-full flex items-end">
+                        <div
+                          style={{ height: `${heightPct}%` }}
+                          className={`w-full rounded-t-[1px] transition-all ${
+                            !hasExp
+                              ? "bg-[#031211]"
+                              : isToday
+                              ? "bg-emerald-400 shadow-[0_0_5px_#34d399]"
+                              : hitTarget
+                              ? "bg-amber-400/90 hover:bg-amber-300"
+                              : "bg-amber-600/70 hover:bg-amber-400"
+                          }`}
+                          title={hasExp ? `${monthName} ${dayNum}: ${exp.toLocaleString()} kcal burned` : `${monthName} ${dayNum}: Upcoming`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="flex justify-between text-[8px] text-slate-500 px-0.5">
-                  <span>Nov 1</span>
-                  <span className="text-teal-400 font-semibold">10/11 Successful Days</span>
-                  <span>Nov 30</span>
+                  <span>{monthName} 1</span>
+                  <span className="text-amber-300 font-semibold">Today: {todayCaloriesExpended.toLocaleString()} kcal</span>
+                  <span>{monthName} {daysInMonth}</span>
                 </div>
               </div>
             </div>
 
-            {/* CARD 3: 7-DAY RECENT METABOLIC LOG TABLE */}
+            {/* CARD 3: RECENT DAILY WEIGHT & EXPENDITURE LOG TABLE */}
             <div className="bg-[#020d0c] border border-[#0d3b38] p-2 rounded-sm">
               <div className="flex items-center justify-between text-[9px] uppercase tracking-wider text-slate-400 font-semibold mb-1 px-0.5">
-                <span>Recent 7-Day Consistency</span>
-                <span className="text-teal-400 font-semibold">Protocol 16:8</span>
+                <span>Daily Weight &amp; Expenditure Log</span>
+                <span className="text-teal-400 font-semibold">OKOK + Samsung Health</span>
               </div>
 
-              <div className="divide-y divide-[#0d3b38]/60 text-[9.5px]">
-                {history7d.slice(-4).map((d) => (
-                  <div key={d.date} className="flex items-center justify-between py-0.5 px-1 hover:bg-[#041d1b] transition-colors">
-                    <span className="text-slate-300 w-12 font-medium">{d.dayLabel}</span>
-                    <span className={`w-16 text-right font-bold ${d.calories <= 1600 ? "text-emerald-400" : "text-amber-400"}`}>
-                      {d.calories} kcal
-                    </span>
-                    <span className="w-14 text-right text-teal-300 font-semibold">{d.protein}g P</span>
-                    <span className={`w-14 text-right font-bold ${d.fastingHours >= 16 ? "text-emerald-400" : "text-amber-400"}`}>
-                      {d.fastingHours.toFixed(1)}h Fast
-                    </span>
-                  </div>
-                ))}
+              <div className="divide-y divide-[#0d3b38]/60 text-[9.5px] max-h-28 overflow-y-auto">
+                {activeHistoryDays
+                  .slice(-5)
+                  .reverse()
+                  .map((d) => {
+                    const netDay = (today.calories || 1487) - d.caloriesExpended;
+                    return (
+                      <div key={d.isoDate} className="flex items-center justify-between py-0.5 px-1 hover:bg-[#041d1b] transition-colors">
+                        <span className="text-slate-300 w-14 font-medium">
+                          {d.day === currentDay ? `${d.date} *` : d.date}
+                        </span>
+                        <span className="w-16 text-right font-bold text-white">
+                          {d.weightKg !== null ? `${d.weightKg.toFixed(1)} kg` : "—"}
+                        </span>
+                        <span className="w-20 text-right text-amber-300 font-semibold">
+                          {d.caloriesExpended.toLocaleString()} kcal
+                        </span>
+                        <span className={`w-16 text-right font-bold ${netDay <= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {netDay > 0 ? `+${netDay}` : netDay} net
+                        </span>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           </div>
@@ -456,25 +547,43 @@ export function BiometricsBay({ health, onRefresh, isRefreshing = false }: Biome
       <div className="pt-2 mt-2 border-t border-[#0d3b38] flex items-center justify-between text-[10px] font-mono text-slate-400">
         <div>
           <span className="block text-[8px] uppercase tracking-wider text-slate-500">
-            {viewMode === "day" ? "Metabolic Status" : "Monthly Compliance"}
+            {viewMode === "day" ? "Biometric Sync" : "Monthly Weight Trend"}
           </span>
           <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
             </span>
-            {viewMode === "day" ? "16:8 Protocol Active" : "91% Monthly Fasting Met"}
+            {viewMode === "day"
+              ? `${todayWeightKg.toFixed(1)} kg • ${todayCaloriesExpended.toLocaleString()} kcal Burn`
+              : `${startMonthWeightKg.toFixed(1)} kg → ${todayWeightKg.toFixed(1)} kg (${weightDeltaMtdKg > 0 ? `+${weightDeltaMtdKg}` : weightDeltaMtdKg} kg)`}
           </span>
         </div>
         <div className="text-right">
           <span className="block text-[8px] uppercase tracking-wider text-slate-500">
-            {viewMode === "day" ? "Protein Completion" : "Monthly Average Intake"}
+            {viewMode === "day" ? "Protein Completion" : "Avg Daily Expenditure"}
           </span>
           <span className="text-teal-300 font-semibold">
-            {viewMode === "day" ? `${proteinPct}% of Target (${today.protein}g / ${proteinGoal}g)` : `${avgCalorieIntake} kcal/d`}
+            {viewMode === "day"
+              ? `${proteinPct}% of Target (${today.protein}g / ${proteinGoal}g)`
+              : `${avgDailyCaloriesExpended.toLocaleString()} kcal/d (${mtdCaloriesExpended.toLocaleString()} MTD)`}
           </span>
         </div>
       </div>
+
+      {/* Google Fit OAuth & Biometric Settings Modal */}
+      <GoogleFitModal
+        isOpen={isGfitModalOpen}
+        onClose={() => setIsGfitModalOpen(false)}
+        currentWeightKg={todayWeightKg}
+        targetWeightKg={targetWeightKg}
+        currentCaloriesExpended={todayCaloriesExpended}
+        targetCaloriesExpended={targetCaloriesExpended}
+        googleFitConnected={googleFitConnected}
+        onSaved={() => {
+          if (onRefresh) onRefresh();
+        }}
+      />
     </div>
   );
 }

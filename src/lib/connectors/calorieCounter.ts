@@ -1,9 +1,11 @@
 import { neon } from "@neondatabase/serverless";
 import { HealthData } from "../types";
+import { fetchBiometricTelemetry } from "./googleFit";
 
 export async function fetchCalorieCounterData(): Promise<HealthData> {
   const appUrl = process.env.CALORIE_APP_URL || "https://calorie-counter-navy.vercel.app";
   const now = new Date();
+  const biometricsPromise = fetchBiometricTelemetry();
 
   // 1. Primary Strategy: Live fetch from deployed Calorie Counter web app
   try {
@@ -66,6 +68,8 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
         }
       }
 
+      const biometrics = await biometricsPromise;
+
       return {
         sourceStatus: "live",
         lastUpdated: now.toISOString(),
@@ -85,7 +89,10 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
           isFastingActive: true,
           fastingStartTime,
           streakDays: 14,
+          weightKg: biometrics.todayWeightKg,
+          caloriesExpended: biometrics.todayCaloriesExpended,
         },
+        biometrics,
         hba1c: {
           current: 6.0,
           prior: 5.5,
@@ -152,6 +159,8 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
         fastingMinutes = Number(latestFast.duration);
       }
 
+      const biometrics = await biometricsPromise;
+
       return {
         sourceStatus: "live",
         lastUpdated: now.toISOString(),
@@ -171,7 +180,10 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
           isFastingActive: !!isFastingActive,
           fastingStartTime: latestFast?.start_time ? String(latestFast.start_time) : "2026-11-11T07:49:59.577Z",
           streakDays: Number(dailyStats[0]?.streak || 14),
+          weightKg: biometrics.todayWeightKg,
+          caloriesExpended: biometrics.todayCaloriesExpended,
         },
+        biometrics,
         hba1c: {
           current: 6.0,
           prior: 5.5,
@@ -191,6 +203,7 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
   }
 
   // 3. Fallback defaults matching live app snapshot exactly
+  const biometrics = await biometricsPromise;
   return {
     sourceStatus: "fallback",
     lastUpdated: now.toISOString(),
@@ -210,7 +223,10 @@ export async function fetchCalorieCounterData(): Promise<HealthData> {
       isFastingActive: true,
       fastingStartTime: "2026-11-11T07:49:59.577Z",
       streakDays: 14,
+      weightKg: biometrics.todayWeightKg,
+      caloriesExpended: biometrics.todayCaloriesExpended,
     },
+    biometrics,
     hba1c: {
       current: 6.0,
       prior: 5.5,

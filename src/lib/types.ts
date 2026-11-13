@@ -194,6 +194,30 @@ export type SpendIncomeData = {
 };
 
 // ── Health & Nutrition (Metabolic & Biometric) ────────────────────────────────
+export type DailyBiometricHistoryPoint = {
+  day: number;
+  date: string; // e.g. "Nov 1"
+  isoDate: string; // YYYY-MM-DD
+  weightKg: number | null;
+  caloriesExpended: number;
+  caloriesIntake?: number;
+};
+
+export type BiometricTelemetry = {
+  googleFitConnected: boolean;
+  source: "google_fit" | "manual" | "fallback";
+  lastSynced: string;
+  todayWeightKg: number;
+  targetWeightKg: number;
+  startMonthWeightKg: number;
+  weightDeltaMtdKg: number;
+  todayCaloriesExpended: number;
+  targetCaloriesExpended: number;
+  avgDailyCaloriesExpended: number;
+  mtdCaloriesExpended: number;
+  monthHistory: DailyBiometricHistoryPoint[];
+};
+
 export type HealthData = {
   sourceStatus: "live" | "fallback" | "offline";
   lastUpdated: string;
@@ -213,7 +237,10 @@ export type HealthData = {
     isFastingActive: boolean;
     fastingStartTime: string | null;
     streakDays: number;
+    weightKg?: number;
+    caloriesExpended?: number;
   };
+  biometrics?: BiometricTelemetry;
   hba1c: {
     current: number;
     prior: number;
@@ -229,6 +256,8 @@ export type HealthData = {
     fat: number;
     sugar: number;
     fastingHours: number;
+    weightKg?: number;
+    caloriesExpended?: number;
   }>;
 };
 
